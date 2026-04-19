@@ -13,6 +13,8 @@ export class Agent {
   readonly lifecycle: Lifecycle;
   readonly scheduler: Scheduler;
   private running = false;
+  private messageQueue: ChannelMessage[] = [];
+  private processing = false;
 
   constructor(
     private config: MercuryConfig,
@@ -27,11 +29,36 @@ export class Agent {
     this.lifecycle = new Lifecycle();
     this.scheduler = new Scheduler(config);
 
-    this.channels.onIncomingMessage((msg) => this.handleMessage(msg));
+    this.channels.onIncomingMessage((msg) => this.enqueueMessage(msg));
 
     this.scheduler.onHeartbeat(async () => {
       await this.heartbeat();
     });
+  }
+
+  private enqueueMessage(msg: ChannelMessage): void {
+    logger.info({ from: msg.channelType, content: msg.content.slice(0, 50) }, 'Message enqueued');
+    this.messageQueue.push(msg);
+    this.processQueue();
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.processing) return;
+    if (this.messageQueue.length === 0) return;
+    if (!this.lifecycle.is('idle')) return;
+
+    this.processing = true;
+
+    while (this.messageQueue.length > 0) {
+      const msg = this.messageQueue.shift()!;
+      try {
+        await this.handleMessage(msg);
+      } catch (err) {
+        logger.error({ err, msg: msg.content.slice(0, 50) }, 'Failed to handle message');
+      }
+    }
+
+    this.processing = false;
   }
 
   async birth(): Promise<void> {
@@ -59,12 +86,7 @@ export class Agent {
     logger.info('Mercury is sleeping');
   }
 
-  async handleMessage(msg: ChannelMessage): Promise<void> {
-    if (!this.lifecycle.is('idle')) {
-      logger.debug({ state: this.lifecycle.getState() }, 'Message received but not idle');
-      return;
-    }
-
+  private async handleMessage(msg: ChannelMessage): Promise<void> {
     this.lifecycle.transition('thinking');
 
     try {
@@ -72,7 +94,6 @@ export class Agent {
       const systemPrompt = this.identity.getSystemPrompt(this.config.identity);
       const recentMemory = this.shortTerm.getRecent(msg.channelId, 10);
       const relevantFacts = this.longTerm.search(msg.content, 3);
-      const recentEvents = this.episodic.getRecent(5);
 
       let contextPrompt = '';
       if (relevantFacts.length > 0) {
@@ -90,10 +111,12 @@ export class Agent {
 
       const channel = this.channels.getChannelForMessage(msg);
       if (channel) {
-        await channel.typing(msg.channelId);
+        await channel.typing(msg.channelId).catch(() => {});
       }
 
+      logger.info({ provider: provider.name, model: provider.getModel() }, 'Generating response');
       const response = await provider.generateText(fullPrompt, systemPrompt);
+      logger.info({ tokens: response.totalTokens }, 'Response generated');
 
       this.tokenBudget.recordUsage({
         provider: response.provider,
@@ -126,7 +149,10 @@ export class Agent {
       });
 
       if (channel) {
+        logger.info({ channelType: msg.channelType, targetId: msg.channelId }, 'Sending response');
         await channel.send(response.text, msg.channelId);
+      } else {
+        logger.warn({ channelType: msg.channelType }, 'No channel found for response');
       }
 
       this.lifecycle.transition('idle');

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { MercuryConfig } from '../utils/config.js';
+import { getMercuryHome } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 
 export interface SoulFiles {
@@ -92,8 +92,8 @@ export class Identity {
   private soulDir: string;
   private cache: SoulFiles | null = null;
 
-  constructor(config: MercuryConfig) {
-    this.soulDir = join(process.cwd(), 'soul');
+  constructor() {
+    this.soulDir = join(getMercuryHome(), 'soul');
   }
 
   load(): SoulFiles {

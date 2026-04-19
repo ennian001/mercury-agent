@@ -1,4 +1,4 @@
-import { Bot, type Context } from 'grammy';
+import { Bot } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { ChannelMessage } from '../types/channel.js';
 import { BaseChannel } from './base.js';
@@ -30,6 +30,7 @@ export class TelegramChannel extends BaseChannel {
       if (!this.isAllowedChat(chatId)) return;
 
       this.ownerChatId = chatId;
+      logger.info({ chatId, text: ctx.message.text?.slice(0, 50) }, 'Telegram message received');
 
       const msg: ChannelMessage = {
         id: ctx.message.message_id.toString(),
@@ -44,11 +45,15 @@ export class TelegramChannel extends BaseChannel {
       this.emit(msg);
     });
 
+    bot.catch((err) => {
+      logger.error({ err: err.message }, 'Telegram bot error');
+    });
+
     this.bot = bot;
 
     await bot.start({
       onStart: (info) => {
-        logger.info({ bot: info.username }, 'Telegram bot started');
+        logger.info({ bot: info.username }, 'Telegram bot started — long polling active');
         this.ready = true;
       },
     });
@@ -61,13 +66,17 @@ export class TelegramChannel extends BaseChannel {
   }
 
   async send(content: string, targetId?: string): Promise<void> {
-    const chatId = targetId ? Number(targetId) : this.ownerChatId;
-    if (!chatId || !this.bot) return;
+    const chatId = this.parseChatId(targetId);
+    if (!chatId || !this.bot) {
+      logger.warn({ targetId, chatId }, 'Telegram send: no valid chat ID');
+      return;
+    }
+    logger.debug({ chatId, textLen: content.length }, 'Telegram sending message');
     await this.bot.api.sendMessage(chatId, content);
   }
 
   async stream(content: AsyncIterable<string>, targetId?: string): Promise<void> {
-    const chatId = targetId ? Number(targetId) : this.ownerChatId;
+    const chatId = this.parseChatId(targetId);
     if (!chatId || !this.bot) return;
 
     let full = '';
@@ -78,7 +87,7 @@ export class TelegramChannel extends BaseChannel {
   }
 
   async typing(targetId?: string): Promise<void> {
-    const chatId = targetId ? Number(targetId) : this.ownerChatId;
+    const chatId = this.parseChatId(targetId);
     if (!chatId || !this.bot) return;
     await this.bot.api.sendChatAction(chatId, 'typing');
   }
@@ -110,6 +119,16 @@ export class TelegramChannel extends BaseChannel {
     } finally {
       this.stopTypingLoop();
     }
+  }
+
+  private parseChatId(targetId?: string): number | null {
+    if (!targetId) return this.ownerChatId;
+    if (targetId.startsWith('telegram:')) {
+      const raw = Number(targetId.split(':')[1]);
+      return isNaN(raw) ? this.ownerChatId : raw;
+    }
+    const num = Number(targetId);
+    return isNaN(num) ? this.ownerChatId : num;
   }
 
   private isAllowedChat(chatId: number): boolean {

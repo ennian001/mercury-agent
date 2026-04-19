@@ -1,9 +1,16 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { config as loadDotenv } from 'dotenv';
 
 loadDotenv();
+
+const MERCURY_HOME = join(homedir(), '.mercury');
+
+export function getMercuryHome(): string {
+  return process.env.MERCURY_HOME || MERCURY_HOME;
+}
 
 export interface ProviderConfig {
   name: string;
@@ -44,8 +51,6 @@ export interface MercuryConfig {
   };
 }
 
-const CONFIG_PATH = join(process.cwd(), 'config', 'mercury.yaml');
-
 function getEnv(key: string, fallback: string = ''): string {
   return process.env[key] || fallback;
 }
@@ -63,6 +68,7 @@ function getEnvBool(key: string, fallback: boolean): boolean {
 }
 
 export function getDefaultConfig(): MercuryConfig {
+  const home = getMercuryHome();
   return {
     identity: {
       name: getEnv('MERCURY_NAME', 'Mercury'),
@@ -104,7 +110,7 @@ export function getDefaultConfig(): MercuryConfig {
       },
     },
     memory: {
-      dir: getEnv('MEMORY_DIR', join(process.cwd(), 'memory')),
+      dir: getEnv('MEMORY_DIR', join(home, 'memory')),
       shortTermMaxMessages: getEnvNum('SHORT_TERM_MAX_MESSAGES', 20),
     },
     heartbeat: {
@@ -115,6 +121,8 @@ export function getDefaultConfig(): MercuryConfig {
     },
   };
 }
+
+const CONFIG_PATH = join(getMercuryHome(), 'mercury.yaml');
 
 export function loadConfig(): MercuryConfig {
   if (existsSync(CONFIG_PATH)) {
@@ -127,11 +135,17 @@ export function loadConfig(): MercuryConfig {
 }
 
 export function saveConfig(config: MercuryConfig): void {
-  const dir = join(process.cwd(), 'config');
+  const dir = getMercuryHome();
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
   writeFileSync(CONFIG_PATH, stringifyYaml(config), 'utf-8');
+}
+
+export function isSetupComplete(): boolean {
+  if (!existsSync(CONFIG_PATH)) return false;
+  const config = loadConfig();
+  return config.identity.owner.length > 0;
 }
 
 function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {

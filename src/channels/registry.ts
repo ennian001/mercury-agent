@@ -9,7 +9,7 @@ export class ChannelRegistry {
   private channels: Map<ChannelType, Channel> = new Map();
 
   constructor(config: MercuryConfig) {
-    this.register('cli', new CLIChannel());
+    this.register('cli', new CLIChannel(config.identity.name));
 
     if (config.channels.telegram.enabled && config.channels.telegram.botToken) {
       this.register('telegram', new TelegramChannel(config));
