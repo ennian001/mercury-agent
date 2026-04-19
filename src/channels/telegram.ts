@@ -65,14 +65,15 @@ export class TelegramChannel extends BaseChannel {
     this.stopTypingLoop();
   }
 
-  async send(content: string, targetId?: string): Promise<void> {
+  async send(content: string, targetId?: string, elapsedMs?: number): Promise<void> {
     const chatId = this.parseChatId(targetId);
     if (!chatId || !this.bot) {
       logger.warn({ targetId, chatId }, 'Telegram send: no valid chat ID');
       return;
     }
+    const timeSuffix = elapsedMs != null ? `\n⏱ ${(elapsedMs / 1000).toFixed(1)}s` : '';
     logger.debug({ chatId, textLen: content.length }, 'Telegram sending message');
-    await this.bot.api.sendMessage(chatId, content);
+    await this.bot.api.sendMessage(chatId, content + timeSuffix);
   }
 
   async stream(content: AsyncIterable<string>, targetId?: string): Promise<void> {

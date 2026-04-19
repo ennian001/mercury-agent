@@ -101,6 +101,7 @@ export class Agent {
 
   private async handleMessage(msg: ChannelMessage): Promise<void> {
     this.lifecycle.transition('thinking');
+    const startTime = Date.now();
 
     try {
       const provider = this.providers.getDefault();
@@ -189,7 +190,8 @@ export class Agent {
 
       if (channel && msg.channelType !== 'internal') {
         logger.info({ channelType: msg.channelType, targetId: msg.channelId }, 'Sending response');
-        await channel.send(finalText, msg.channelId);
+        const elapsed = Date.now() - startTime;
+        await channel.send(finalText, msg.channelId, elapsed);
       } else {
         logger.debug('Internal prompt processed, no channel response needed');
       }

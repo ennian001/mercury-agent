@@ -22,12 +22,15 @@ export class CLIChannel extends BaseChannel {
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: '',
+      prompt: '  You: ',
     });
 
     this.rl.on('line', (line) => {
       const trimmed = line.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        this.showPrompt();
+        return;
+      }
 
       const msg: ChannelMessage = {
         id: Date.now().toString(36),
@@ -50,9 +53,11 @@ export class CLIChannel extends BaseChannel {
     this.ready = false;
   }
 
-  async send(content: string, _targetId?: string): Promise<void> {
+  async send(content: string, _targetId?: string, elapsedMs?: number): Promise<void> {
+    const timeStr = elapsedMs != null ? chalk.dim(` (${(elapsedMs / 1000).toFixed(1)}s)`) : '';
     console.log('');
-    console.log(chalk.cyan(`  ${this.agentName}: `) + content);
+    console.log(chalk.cyan(`  ${this.agentName}:`) + timeStr);
+    console.log(`  ${content}`);
     console.log('');
     this.showPrompt();
   }
@@ -71,7 +76,10 @@ export class CLIChannel extends BaseChannel {
   }
 
   showPrompt(): void {
-    process.stdout.write('  You: ');
+    if (this.rl) {
+      this.rl.setPrompt('  You: ');
+      this.rl.prompt();
+    }
   }
 
   async prompt(question: string): Promise<string> {
