@@ -1,136 +1,155 @@
 import { Marked } from 'marked';
-import type { Tokens, MarkedExtension } from 'marked';
 import chalk from 'chalk';
 
-const cliExtension: MarkedExtension = {
-  renderer: {
-    heading({ text, depth }: Tokens.Heading) {
-      if (depth === 1) return `\n${chalk.bold.cyan(text)}\n`;
-      if (depth === 2) return `\n${chalk.bold.cyan(`  ■ ${text}`)}\n`;
-      return `\n${chalk.bold(`    ■ ${text}`)}\n`;
-    },
-
-    paragraph({ tokens }: Tokens.Paragraph) {
-      const p = (this as any).parser;
-      if (p && tokens) return p.parseInline(tokens) + '\n';
-      return '' + '\n';
-    },
-
-    strong({ text }: Tokens.Strong) {
-      return chalk.bold(text);
-    },
-
-    em({ text }: Tokens.Em) {
-      return chalk.italic(text);
-    },
-
-    del({ text }: Tokens.Del) {
-      return chalk.dim.strikethrough(text);
-    },
-
-    codespan({ text }: Tokens.Codespan) {
-      return chalk.yellow(text);
-    },
-
-    code({ text, lang }: Tokens.Code) {
-      const lines = text
-        .split('\n')
-        .map((l) => `${chalk.dim('  ')}${chalk.yellow(l)}`)
-        .join('\n');
-      const langStr = lang ? chalk.dim(` [${lang}]`) : '';
-      return `\n${langStr}\n${lines}\n`;
-    },
-
-    list({ ordered, items }: Tokens.List) {
-      const p = (this as any).parser;
-      const lines: string[] = [];
-      items?.forEach((item, i) => {
-        const bullet = ordered ? `${i + 1}.` : '•';
-        let content = item.text;
-        if (p && item.tokens) content = p.parseInline(item.tokens);
-        lines.push(`  ${chalk.dim(bullet)} ${content}`);
-      });
-      return `\n${lines.join('\n')}\n`;
-    },
-
-    listitem({ text }: Tokens.ListItem) {
-      return text;
-    },
-
-    blockquote({ text, tokens }: Tokens.Blockquote) {
-      const p = (this as any).parser;
-      let content = text;
-      if (p && tokens) content = p.parseInline(tokens);
-      const lines = content
-        .split('\n')
-        .map((l) => `${chalk.dim('│ ')}${chalk.gray(l)}`)
-        .join('\n');
-      return `\n${lines}\n`;
-    },
-
-    hr() {
-      return chalk.dim('─'.repeat(50)) + '\n';
-    },
-
-    link({ text, href }: Tokens.Link) {
-      return `${chalk.blue.underline(text)} ${chalk.dim(`(${href})`)}`;
-    },
-
-    image({ href, title }: Tokens.Image) {
-      const label = title || href;
-      return chalk.blue(`🖼 ${label}`);
-    },
-
-    table({ header, rows }: Tokens.Table) {
-      const p = (this as any).parser;
-      const headers = header.map((h) => {
-        const text = h.tokens ? p?.parseInline(h.tokens) ?? h.text : h.text;
-        return chalk.bold(text);
-      });
-      const colWidths = header.map((h, i) => {
-        const contentWidths = rows.map((row) => {
-          const cell = row[i];
-          const t = typeof cell === 'object' && 'tokens' in cell
-            ? p?.parseInline(cell.tokens) ?? cell.text
-            : String(cell);
-          return t.length;
-        });
-        return Math.max(h.text.length, ...contentWidths) + 2;
-      });
-
-      const headerLine = headers
-        .map((h, i) => h.padEnd(colWidths[i]))
-        .join(chalk.dim(' │ '));
-      const separator = colWidths.map((w) => '─'.repeat(w)).join(chalk.dim('─┼─'));
-
-      const dataLines = rows.map((row) =>
-        row
-          .map((cell, i) => {
-            const t = typeof cell === 'object' && 'tokens' in cell
-              ? p?.parseInline(cell.tokens) ?? cell.text
-              : String(cell);
-            return t.padEnd(colWidths[i]);
-          })
-          .join(chalk.dim(' │ '))
-      );
-
-      return `\n${headerLine}\n${chalk.dim(separator)}\n${dataLines.join('\n')}\n`;
-    },
-  },
-};
-
-const cliMarked = new Marked(cliExtension);
+const lexer = new Marked();
 
 export function renderMarkdown(text: string): string {
   try {
-    const result = cliMarked.parse(text, { async: false });
-    if (typeof result === 'string') {
-      return result.replace(/\n{3,}/g, '\n\n').trim();
-    }
-    return text;
+    const tokens = lexer.lexer(text);
+    const result = renderTokens(tokens);
+    return result.replace(/\n{3,}/g, '\n\n').trimEnd();
   } catch {
     return text;
   }
+}
+
+function renderTokens(tokens: any[]): string {
+  return tokens.map((t) => renderToken(t)).join('');
+}
+
+function renderToken(t: any): string {
+  if (!t || typeof t !== 'object') return String(t ?? '');
+
+  switch (t.type) {
+    case 'heading':
+      return renderHeading(t);
+    case 'paragraph':
+      return renderInline(t.tokens) + '\n\n';
+    case 'strong':
+      return chalk.bold(renderInline(t.tokens));
+    case 'em':
+      return chalk.italic(renderInline(t.tokens));
+    case 'del':
+      return chalk.dim.strikethrough(renderInline(t.tokens));
+    case 'codespan':
+      return chalk.yellow(t.text);
+    case 'code':
+      return renderCodeBlock(t);
+    case 'list':
+      return renderList(t);
+    case 'blockquote':
+      return renderBlockquote(t);
+    case 'hr':
+      return chalk.dim('─'.repeat(50)) + '\n\n';
+    case 'link':
+      return `${chalk.blue.underline(renderInline(t.tokens))} ${chalk.dim(`(${t.href})`)}`;
+    case 'image':
+      return chalk.blue(`🖼 ${t.title || t.href}`);
+    case 'table':
+      return renderTable(t);
+    case 'text':
+      if (t.tokens) return renderInline(t.tokens);
+      return t.text || '';
+    case 'html':
+      return t.text || '';
+    case 'space':
+      return '';
+    default:
+      return t.text || '';
+  }
+}
+
+function renderHeading(t: any): string {
+  const text = renderInline(t.tokens);
+  if (t.depth === 1) return `\n${chalk.bold.cyan(text)}\n\n`;
+  if (t.depth === 2) return `\n${chalk.bold.cyan(`  ■ ${text}`)}\n\n`;
+  return `\n${chalk.bold(`    ■ ${text}`)}\n\n`;
+}
+
+function renderInline(tokens: any[] | undefined): string {
+  if (!tokens) return '';
+  return tokens.map((t) => {
+    if (typeof t === 'string') return t;
+    if (t.type === 'strong') return chalk.bold(renderInline(t.tokens));
+    if (t.type === 'em') return chalk.italic(renderInline(t.tokens));
+    if (t.type === 'del') return chalk.dim.strikethrough(renderInline(t.tokens));
+    if (t.type === 'codespan') return chalk.yellow(t.text);
+    if (t.type === 'link') return `${chalk.blue.underline(renderInline(t.tokens))} ${chalk.dim(`(${t.href})`)}`;
+    if (t.type === 'image') return chalk.blue(`🖼 ${t.title || t.href}`);
+    if (t.type === 'text') {
+      return t.tokens ? renderInline(t.tokens) : (t.text || '');
+    }
+    if (t.type === 'html') return t.text || '';
+    return t.text || '';
+  }).join('');
+}
+
+function renderCodeBlock(t: any): string {
+  const lines = t.text
+    .split('\n')
+    .map((l: string) => `${chalk.dim('  ')}${chalk.yellow(l)}`)
+    .join('\n');
+  const langStr = t.lang ? chalk.dim(` [${t.lang}]`) : '';
+  return `\n${langStr}\n${lines}\n\n`;
+}
+
+function renderList(t: any): string {
+  const lines: string[] = [];
+  const items = t.items || [];
+  items.forEach((item: any, i: number) => {
+    const bullet = t.ordered ? `${i + 1}.` : '•';
+    const firstLine = renderInline(item.tokens?.[0]?.tokens || [{ text: item.text }]);
+    lines.push(`  ${chalk.dim(bullet)} ${firstLine}`);
+
+    const restTokens = (item.tokens || []).slice(1);
+    for (const sub of restTokens) {
+      if (sub.type === 'list') {
+        const subLines = renderList(sub)
+          .split('\n')
+          .filter(Boolean)
+          .map((l: string) => `    ${l}`)
+          .join('\n');
+        lines.push(subLines);
+      } else if (sub.type === 'text') {
+        lines.push(`    ${chalk.dim('•')} ${renderInline(sub.tokens)}`);
+      }
+    }
+  });
+  return lines.join('\n') + '\n\n';
+}
+
+function renderBlockquote(t: any): string {
+  const content = renderTokens(t.tokens || []);
+  const lines = content
+    .split('\n')
+    .filter((l: string) => l.trim())
+    .map((l: string) => `${chalk.dim('│ ')}${chalk.gray(l)}`)
+    .join('\n');
+  return `\n${lines}\n\n`;
+}
+
+function renderTable(t: any): string {
+  const headers = (t.header || []).map((h: any) => chalk.bold(renderInline(h.tokens)));
+  const colWidths = (t.header || []).map((h: any, i: number) => {
+    const hLen = (h.text || '').length;
+    const rowLens = (t.rows || []).map((row: any) => {
+      const cell = row[i];
+      return cell?.text?.length ?? 0;
+    });
+    return Math.max(hLen, ...rowLens) + 2;
+  });
+
+  const headerLine = headers.map((h: string, i: number) => h.padEnd(colWidths[i])).join(chalk.dim(' │ '));
+  const separator = colWidths.map((w: number) => '─'.repeat(w)).join(chalk.dim('─┼─'));
+
+  const dataLines = (t.rows || []).map((row: any) =>
+    row.map((cell: any, i: number) => {
+      const text = renderInline(cell.tokens) || cell.text || '';
+      return text.padEnd(colWidths[i]);
+    }).join(chalk.dim(' │ '))
+  );
+
+  return `\n${headerLine}\n${chalk.dim(separator)}\n${dataLines.join('\n')}\n\n`;
 }
 
 function escapeHtml(text: string): string {
