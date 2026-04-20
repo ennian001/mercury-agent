@@ -8,6 +8,25 @@ import { logger } from '../utils/logger.js';
 
 const SERVICE_NAME = 'mercury';
 const SERVICE_DESC = 'Mercury — Soul-Driven AI Agent';
+const WIN_TASK_NAME = 'MercuryAgent';
+
+export function isServiceInstalled(): boolean {
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    return existsSync(join(homedir(), 'Library', 'LaunchAgents', 'com.cosmicstack.mercury.plist'));
+  } else if (platform === 'linux') {
+    return existsSync(join(homedir(), '.config', 'systemd', 'user', 'mercury.service'));
+  } else if (platform === 'win32') {
+    try {
+      execSync(`schtasks /query /tn "${WIN_TASK_NAME}"`, { stdio: 'pipe', shell: 'cmd.exe' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 function getNodeBinPath(): string {
   return process.execPath;
@@ -287,8 +306,6 @@ function showLinuxStatus(): void {
   }
   console.log('');
 }
-
-const WIN_TASK_NAME = 'MercuryAgent';
 
 function installWindows(): void {
   const nodeBin = getNodeBinPath();

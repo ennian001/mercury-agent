@@ -115,6 +115,30 @@ export function stopDaemon(): void {
   console.log('');
 }
 
+export function restartDaemon(): void {
+  const status = getDaemonStatus();
+
+  if (status.running && status.pid) {
+    console.log(chalk.yellow(`  Stopping Mercury (PID: ${status.pid})...`));
+    try {
+      if (process.platform === 'win32') {
+        process.kill(status.pid);
+      } else {
+        process.kill(status.pid, 'SIGTERM');
+      }
+    } catch {
+      // process may have already exited
+    }
+    try { unlinkSync(pidPath()); } catch {}
+    console.log(chalk.green('  Mercury stopped.'));
+  } else if (status.pid) {
+    try { unlinkSync(pidPath()); } catch {}
+  }
+
+  console.log(chalk.yellow('  Starting Mercury...'));
+  startBackground();
+}
+
 export function showLogs(): void {
   const logFile = logPath();
   if (!existsSync(logFile)) {

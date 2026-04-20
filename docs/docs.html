@@ -291,6 +291,18 @@
       </div>
 
       <h2 id="starting">Starting Mercury</h2>
+
+      <div class="callout" style="border-left-color: var(--cyan); background: rgba(0, 212, 255, 0.06);">
+        <div class="callout-title">Recommended: mercury up</div>
+        <p>The easiest way to run Mercury persistently. Installs the system service if needed, starts the daemon, and
+          ensures it's running.</p>
+      </div>
+      <div class="terminal-inline">
+        <code>mercury up</code>
+      </div>
+      <p>If Mercury is already running, <code>mercury up</code> just confirms it and shows the PID. If the service isn't
+        installed yet, it installs it first, then starts the daemon.</p>
+
       <h3>Foreground (interactive)</h3>
       <div class="terminal-inline">
         <code>mercury start</code>
@@ -325,6 +337,10 @@
         </thead>
         <tbody>
           <tr>
+            <td>mercury up</td>
+            <td><strong>Recommended.</strong> Install service + start daemon + ensure running</td>
+          </tr>
+          <tr>
             <td>mercury</td>
             <td>Start the agent (same as <code>mercury start</code>)</td>
           </tr>
@@ -335,6 +351,10 @@
           <tr>
             <td>mercury start -d</td>
             <td>Start in background (daemon mode)</td>
+          </tr>
+          <tr>
+            <td>mercury restart</td>
+            <td>Restart a background Mercury process</td>
           </tr>
           <tr>
             <td>mercury stop</td>
@@ -440,6 +460,13 @@
       <h2 id="daemon">Daemon Mode</h2>
       <p>Mercury can run in the background so Telegram and scheduled tasks keep working after you close the terminal.</p>
 
+      <h3>The easy way: mercury up</h3>
+      <div class="terminal-inline">
+        <code>mercury up</code>
+      </div>
+      <p>This one command does everything: installs the system service if needed, starts the background daemon, and
+        confirms Mercury is running. If it's already running, it just shows you the PID.</p>
+
       <h3>Start in background</h3>
       <div class="terminal-inline">
         <code>mercury start -d</code>
@@ -453,6 +480,13 @@
       </div>
       <p>Sends <code>SIGTERM</code> (<code>process.kill</code> on Windows) to the background process and removes the PID
         file.</p>
+
+      <h3>Restart</h3>
+      <div class="terminal-inline">
+        <code>mercury restart</code>
+      </div>
+      <p>Stops the running daemon (if any) and starts a fresh one. Useful when something isn't working right and you need a
+        clean restart.</p>
 
       <h3>View logs</h3>
       <div class="terminal-inline">

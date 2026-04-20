@@ -52,27 +52,31 @@ Every AI agent can read files, run commands, and fetch URLs. Most do it silently
 
 ## Daemon Mode
 
-Run Mercury in the background so Telegram and scheduled tasks keep working after you close the terminal.
+**One command to make Mercury persistent:**
 
 ```bash
-# Start in background
-mercury start -d
+mercury up
+```
 
-# Check status
-mercury status
+This installs the system service (if not installed), starts the background daemon, and ensures Mercury is running. Use this as your go-to command.
 
-# View logs
-mercury logs
+If Mercury is already running, `mercury up` just confirms it and shows the PID.
 
-# Stop background process
-mercury stop
+### Other daemon commands
+
+```bash
+mercury restart      # Restart the background process
+mercury stop         # Stop the background process
+mercury start -d     # Start in background (without service install)
+mercury logs         # View recent daemon logs
+mercury status       # Show if daemon is running
 ```
 
 Daemon mode includes built-in crash recovery — if the process crashes, it restarts automatically with exponential backoff (up to 10 restarts per minute).
 
 ### System Service (auto-start on boot)
 
-Install Mercury as a system service so it starts automatically:
+`mercury up` installs this automatically. You can also manage it directly:
 
 ```bash
 mercury service install
@@ -95,9 +99,11 @@ In daemon mode, Telegram becomes your primary channel — CLI is log-only since 
 
 | Command | Description |
 |---------|-------------|
+| `mercury up` | **Recommended.** Install service + start daemon + ensure running |
 | `mercury` | Start the agent (same as `mercury start`) |
 | `mercury start` | Start in foreground |
 | `mercury start -d` | Start in background (daemon mode) |
+| `mercury restart` | Restart the background process |
 | `mercury stop` | Stop a background process |
 | `mercury logs` | View recent daemon logs |
 | `mercury doctor` | Reconfigure (Enter to keep current values) |

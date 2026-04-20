@@ -48,10 +48,12 @@ export function getManual(): string {
   sections.push('');
 
   const commands = [
+    ['mercury up', 'Start persistently (install service + daemon)'],
     ['mercury', 'Start the agent (same as mercury start)'],
     ['mercury start', 'Start the agent in foreground'],
     ['mercury start -d', 'Start in background (daemon mode)'],
-    ['mercury stop', 'Stop a background Mercury process'],
+    ['mercury restart', 'Restart a background process'],
+    ['mercury stop', 'Stop a background process'],
     ['mercury logs', 'Show recent daemon logs'],
     ['mercury doctor', 'Reconfigure settings (Enter keeps current)'],
     ['mercury setup', 'Re-run the setup wizard'],

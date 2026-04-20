@@ -403,12 +403,11 @@
           <span class="terminal-title">terminal</span>
         </div>
         <div class="terminal-body" style="min-height: auto; padding: 16px 24px;">
-          <p style="margin:0;color:var(--gray);">$ <span style="color:var(--cyan);">mercury start -d</span></p>
+          <p style="margin:0;color:var(--gray);">$ <span style="color:var(--cyan);">mercury up</span></p>
+          <p style="margin:0;color:var(--cyan);">Installing Mercury as a system service...</p>
+          <p style="margin:0;color:var(--green);">Mercury service installed (LaunchAgent)</p>
+          <p style="margin:0;color:var(--cyan);">Starting Mercury in background...</p>
           <p style="margin:0;color:var(--white);">Mercury started in background (PID: 48291)</p>
-          <p style="margin:0;color:var(--gray-dim);">Logs: ~/.mercury/daemon.log</p>
-          <p style="margin:0;color:var(--gray-dim);">Use `mercury stop` to stop.</p>
-          <p style="margin:8px 0 0;color:var(--gray);">$ <span style="color:var(--cyan);">mercury service install</span></p>
-          <p style="margin:0;color:var(--green);">Mercury service installed (macOS LaunchAgent)</p>
           <p style="margin:0;color:var(--gray-dim);">Auto-starts on login. Auto-restarts on crash.</p>
         </div>
       </div>
@@ -416,10 +415,10 @@
         <div class="cap-group" data-reveal>
           <h3>Commands</h3>
           <ul>
-            <li><code>mercury start -d</code> — Background daemon</li>
+            <li><code>mercury up</code> — Install service + start daemon</li>
+            <li><code>mercury start</code> — Foreground mode</li>
+            <li><code>mercury restart</code> — Restart background process</li>
             <li><code>mercury stop</code> — Stop background process</li>
-            <li><code>mercury logs</code> — View daemon logs</li>
-            <li><code>mercury service install</code> — Auto-start on boot</li>
             <li><code>mercury doctor</code> — Reconfigure (Enter keeps values)</li>
             <li><code>/help</code> <code>/status</code> <code>/budget</code> — In-chat commands</li>
           </ul>

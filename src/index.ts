@@ -16,8 +16,8 @@ import { TokenBudget } from './utils/tokens.js';
 import { CapabilityRegistry } from './capabilities/registry.js';
 import { SkillLoader } from './skills/loader.js';
 import { getManual } from './utils/manual.js';
-import { startBackground, stopDaemon, showLogs, getDaemonStatus } from './cli/daemon.js';
-import { installService, uninstallService, showServiceStatus } from './cli/service.js';
+import { startBackground, stopDaemon, showLogs, getDaemonStatus, restartDaemon } from './cli/daemon.js';
+import { installService, uninstallService, showServiceStatus, isServiceInstalled } from './cli/service.js';
 import { runWithWatchdog } from './cli/watchdog.js';
 
 function hr() {
@@ -346,6 +346,41 @@ program
   .description('Stop a background Mercury process')
   .action(() => {
     stopDaemon();
+  });
+
+program
+  .command('restart')
+  .description('Restart a background Mercury process')
+  .action(() => {
+    restartDaemon();
+  });
+
+program
+  .command('up')
+  .description('Ensure Mercury is running persistently — installs service if needed, starts daemon')
+  .action(async () => {
+    if (!isSetupComplete()) {
+      await configure();
+    }
+
+    const daemon = getDaemonStatus();
+
+    if (daemon.running && daemon.pid) {
+      console.log('');
+      console.log(chalk.green(`  Mercury is already running (PID: ${daemon.pid})`));
+      console.log(chalk.dim(`  Logs: ${daemon.logPath}`));
+      console.log('');
+      return;
+    }
+
+    if (!isServiceInstalled()) {
+      console.log('');
+      console.log(chalk.cyan('  Installing Mercury as a system service...'));
+      installService();
+    }
+
+    console.log(chalk.cyan('  Starting Mercury in background...'));
+    startBackground();
   });
 
 program
