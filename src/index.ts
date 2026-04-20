@@ -12,6 +12,7 @@ import { Agent } from './core/agent.js';
 import { Scheduler } from './core/scheduler.js';
 import { ChannelRegistry } from './channels/registry.js';
 import { CLIChannel } from './channels/cli.js';
+import { TelegramChannel } from './channels/telegram.js';
 import { TokenBudget } from './utils/tokens.js';
 import { CapabilityRegistry } from './capabilities/registry.js';
 import { SkillLoader } from './skills/loader.js';

@@ -125,6 +125,8 @@ Type these during a conversation — they don't consume API tokens. Work on both
 | `/status` | Show agent config, budget, and usage |
 | `/tools` | List all loaded tools |
 | `/skills` | List installed skills |
+| `/stream` | Toggle Telegram text streaming |
+| `/stream off` | Disable streaming (single message) |
 | `/budget` | Show token budget status |
 | `/budget override` | Override budget for one request |
 | `/budget reset` | Reset usage to zero |

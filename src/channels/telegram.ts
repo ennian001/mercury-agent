@@ -15,9 +15,14 @@ export class TelegramChannel extends BaseChannel {
   private bot: Bot | null = null;
   private ownerChatId: number | null = null;
   private typingInterval: NodeJS.Timeout | null = null;
+  private chatCommandContext?: import('../capabilities/registry.js').ChatCommandContext;
 
   constructor(private config: MercuryConfig) {
     super();
+  }
+
+  setChatCommandContext(ctx: import('../capabilities/registry.js').ChatCommandContext): void {
+    this.chatCommandContext = ctx;
   }
 
   async start(): Promise<void> {
@@ -57,11 +62,35 @@ export class TelegramChannel extends BaseChannel {
     this.bot = bot;
 
     await bot.start({
-      onStart: (info) => {
+      onStart: async (info) => {
         logger.info({ bot: info.username }, 'Telegram bot started — long polling active');
         this.ready = true;
+        await this.registerCommands();
       },
     });
+  }
+
+  private async registerCommands(): Promise<void> {
+    if (!this.bot) return;
+
+    const commands = [
+      { command: 'help', description: 'Show capabilities and commands manual' },
+      { command: 'status', description: 'Show agent config, budget, and uptime' },
+      { command: 'tools', description: 'List all loaded tools' },
+      { command: 'skills', description: 'List installed skills' },
+      { command: 'budget', description: 'Show token budget status' },
+      { command: 'budget_override', description: 'Override budget for one request' },
+      { command: 'budget_reset', description: 'Reset token usage to zero' },
+      { command: 'budget_set', description: 'Set new daily token budget' },
+      { command: 'stream', description: 'Toggle text streaming on/off' },
+    ];
+
+    try {
+      await this.bot.api.setMyCommands(commands);
+      logger.info({ count: commands.length }, 'Telegram bot commands registered');
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Failed to register Telegram commands (non-critical)');
+    }
   }
 
   async stop(): Promise<void> {
@@ -166,23 +195,78 @@ export class TelegramChannel extends BaseChannel {
     }
   }
 
-  async sendStreamToChat(chatId: number, textStream: AsyncIterable<string>): Promise<void> {
-    if (!this.bot) return;
+  async sendStreamToChat(chatId: number, textStream: AsyncIterable<string>): Promise<string> {
+    if (!this.bot) return '';
+
+    const STREAM_EDIT_INTERVAL = 1500;
+    const STREAM_MIN_LENGTH = 20;
+
     this.startTypingLoop(chatId);
+
     try {
       let full = '';
+      let messageId: number | null = null;
+      let lastEditTime = 0;
+      let lastEditLength = 0;
+
       for await (const chunk of textStream) {
         full += chunk;
+
+        const now = Date.now();
+        const timeSinceLastEdit = now - lastEditTime;
+        const charsSinceLastEdit = full.length - lastEditLength;
+
+        if (messageId === null && full.length >= STREAM_MIN_LENGTH) {
+          try {
+            const msg = await this.bot.api.sendMessage(chatId, this.escapeHtml(full) + ' ▌', { parse_mode: 'HTML' });
+            messageId = msg.message_id;
+            lastEditTime = now;
+            lastEditLength = full.length;
+          } catch {
+            messageId = null;
+          }
+        } else if (messageId !== null && timeSinceLastEdit >= STREAM_EDIT_INTERVAL && charsSinceLastEdit >= 20) {
+          try {
+            await this.bot.api.editMessageText(chatId, messageId, this.escapeHtml(full) + ' ▌', { parse_mode: 'HTML' });
+            lastEditTime = now;
+            lastEditLength = full.length;
+          } catch {
+            // edit failed — rate limited or message unchanged, skip
+          }
+        }
       }
-      const html = mdToTelegram(full);
-      try {
-        await this.bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' });
-      } catch {
-        await this.bot.api.sendMessage(chatId, this.stripHtml(html));
+
+      if (messageId !== null) {
+        const html = mdToTelegram(full);
+        try {
+          await this.bot.api.editMessageText(chatId, messageId, html, { parse_mode: 'HTML' });
+        } catch {
+          try {
+            await this.bot.api.editMessageText(chatId, messageId, this.stripHtml(html));
+          } catch {
+            // final edit failed
+          }
+        }
+      } else {
+        const html = mdToTelegram(full);
+        try {
+          await this.bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' });
+        } catch {
+          await this.bot.api.sendMessage(chatId, this.stripHtml(html));
+        }
       }
+
+      return full;
     } finally {
       this.stopTypingLoop();
     }
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   private splitMessage(text: string, maxLen: number): string[] {

@@ -21,6 +21,7 @@ export class Agent {
   private running = false;
   private messageQueue: ChannelMessage[] = [];
   private processing = false;
+  private telegramStreaming: boolean;
 
   constructor(
     private config: MercuryConfig,
@@ -37,6 +38,7 @@ export class Agent {
     this.lifecycle = new Lifecycle();
     this.scheduler = scheduler;
     this.capabilities = capabilities;
+    this.telegramStreaming = config.channels.telegram.streaming ?? true;
 
     this.scheduler.setOnScheduledTask(async (manifest) => this.handleScheduledTask(manifest));
 
@@ -118,6 +120,37 @@ export class Agent {
         return;
       }
 
+      if (trimmed === '/budget_override') {
+        await this.handleBudgetCommand('override', msg.channelType, msg.channelId);
+        this.lifecycle.transition('idle');
+        return;
+      }
+      if (trimmed === '/budget_reset') {
+        await this.handleBudgetCommand('reset', msg.channelType, msg.channelId);
+        this.lifecycle.transition('idle');
+        return;
+      }
+      if (trimmed.startsWith('/budget_set')) {
+        const args = trimmed.slice('/budget_set'.length).trim();
+        await this.handleBudgetCommand('set ' + args, msg.channelType, msg.channelId);
+        this.lifecycle.transition('idle');
+        return;
+      }
+      if (trimmed.startsWith('/stream')) {
+        const sub = trimmed.slice('/stream'.length).trim().toLowerCase();
+        if (sub === 'off') {
+          this.telegramStreaming = false;
+          const ch = this.channels.get(msg.channelType as any);
+          if (ch) await ch.send('Telegram streaming disabled. Responses will arrive as a single message.', msg.channelId);
+        } else {
+          this.telegramStreaming = true;
+          const ch = this.channels.get(msg.channelType as any);
+          if (ch) await ch.send('Telegram streaming enabled. Responses will appear progressively.', msg.channelId);
+        }
+        this.lifecycle.transition('idle');
+        return;
+      }
+
       if (await this.handleChatCommand(trimmed, msg.channelType, msg.channelId)) {
         this.lifecycle.transition('idle');
         return;
@@ -184,7 +217,7 @@ export class Agent {
       let lastError: any = null;
       let streamedText = '';
 
-      const canStream = msg.channelType === 'cli';
+      const canStream = msg.channelType === 'cli' || (msg.channelType === 'telegram' && this.telegramStreaming);
 
       for (const provider of fallbackIterator) {
         try {
@@ -206,7 +239,25 @@ export class Agent {
               },
             });
 
-            const fullText = await channel.stream(streamResult.textStream, msg.channelId);
+            let fullText: string;
+
+            if (msg.channelType === 'telegram') {
+              const tgChannel = this.channels.get('telegram');
+              if (tgChannel && 'sendStreamToChat' in tgChannel) {
+                const chatId = msg.channelId.startsWith('telegram:')
+                  ? Number(msg.channelId.split(':')[1])
+                  : Number(msg.channelId);
+                if (!isNaN(chatId)) {
+                  fullText = await (tgChannel as any).sendStreamToChat(chatId, streamResult.textStream);
+                } else {
+                  fullText = await channel.stream(streamResult.textStream, msg.channelId);
+                }
+              } else {
+                fullText = await channel.stream(streamResult.textStream, msg.channelId);
+              }
+            } else {
+              fullText = await channel.stream(streamResult.textStream, msg.channelId);
+            }
 
             const [usage] = await Promise.all([
               streamResult.usage,
@@ -547,6 +598,18 @@ export class Agent {
         ];
         await channel.send(lines.join('\n'), channelId);
       }
+      return true;
+    }
+
+    if (cmd === '/stream' || cmd === '/stream on') {
+      this.telegramStreaming = true;
+      await channel.send('Telegram streaming enabled. Responses will appear progressively.', channelId);
+      return true;
+    }
+
+    if (cmd === '/stream off') {
+      this.telegramStreaming = false;
+      await channel.send('Telegram streaming disabled. Responses will arrive as a single message.', channelId);
       return true;
     }
 

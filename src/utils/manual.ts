@@ -79,6 +79,9 @@ export function getManual(): string {
     ['/status', 'Show config and budget info'],
     ['/tools', 'List currently loaded tools'],
     ['/skills', 'List installed skills'],
+    ['/stream', 'Toggle text streaming on/off (Telegram)'],
+    ['/stream on', 'Enable streaming (live text updates)'],
+    ['/stream off', 'Disable streaming (single message)'],
   ];
 
   for (const [cmd, desc] of chat) {

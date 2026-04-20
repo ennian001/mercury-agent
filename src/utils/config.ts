@@ -38,6 +38,7 @@ export interface MercuryConfig {
       botToken: string;
       webhookUrl?: string;
       allowedChatIds?: number[];
+      streaming?: boolean;
     };
   };
   memory: {
@@ -109,6 +110,7 @@ export function getDefaultConfig(): MercuryConfig {
           .split(',')
           .filter(Boolean)
           .map(Number),
+        streaming: getEnvBool('TELEGRAM_STREAMING', true),
       },
     },
     memory: {
