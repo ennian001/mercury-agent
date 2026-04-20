@@ -33,7 +33,7 @@ function banner() {
   }
   console.log('');
   console.log(chalk.white('  an AI agent for personal tasks'));
-  console.log(chalk.dim('  v0.1.0 · by Cosmic Stack · mercury.cosmicstack.org'));
+  console.log(chalk.dim('  v0.2.0 · by Cosmic Stack · mercury.cosmicstack.org'));
   console.log('');
 }
 
@@ -360,7 +360,7 @@ const program = new Command();
 program
   .name('mercury')
   .description('Mercury — Soul-driven AI agent with permission-hardened tools, token budgets, and multi-channel access.')
-  .version('0.1.0')
+  .version('0.2.0')
   .option('-v, --verbose', 'Show debug logs')
   .action(async () => {
     if (!isSetupComplete()) {
