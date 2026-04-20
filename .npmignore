@@ -1,5 +1,5 @@
 src/
-site/
+docs/
 scripts/
 *.ts
 !dist/*.ts
