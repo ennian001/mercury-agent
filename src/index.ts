@@ -143,8 +143,7 @@ async function chooseDefaultProvider(config: MercuryConfig): Promise<void> {
   const configured = getConfiguredProviderNames(config);
 
   if (configured.length === 0) {
-    console.log(chalk.red('\n  At least one provider must be configured.'));
-    process.exit(1);
+    return;
   }
 
   if (configured.length === 1) {
@@ -244,11 +243,13 @@ async function promptValidatedValue(
   prompt: string,
   validator: (value: string) => string | null,
   existingValue?: string,
-): Promise<string> {
+  options?: { allowSkip?: boolean },
+): Promise<string | undefined> {
   while (true) {
     const value = await ask(prompt);
     if (!value) {
       if (existingValue) return existingValue;
+      if (options?.allowSkip) return undefined;
       console.log(chalk.red('  A value is required here.'));
       continue;
     }
@@ -307,83 +308,114 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
   }
   console.log('');
 
-  const selectedProviders = await chooseProvidersToConfigure(config, isReconfig);
-  console.log('');
+  while (true) {
+    const selectedProviders = await chooseProvidersToConfigure(config, isReconfig);
+    console.log('');
 
-  for (const provider of selectedProviders) {
-    if (provider === 'deepseek') {
-      const mask = isReconfig && config.providers.deepseek.apiKey ? ` [${maskKey(config.providers.deepseek.apiKey)}]` : '';
-      config.providers.deepseek.apiKey = await promptValidatedValue(
-        chalk.white(`  DeepSeek API key${mask}: `),
-        (value) => validateApiKey('deepseek', value),
-        isReconfig ? config.providers.deepseek.apiKey : undefined,
-      );
-      config.providers.deepseek.enabled = true;
+    for (const provider of selectedProviders) {
+      if (provider === 'deepseek') {
+        const mask = isReconfig && config.providers.deepseek.apiKey ? ` [${maskKey(config.providers.deepseek.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  DeepSeek API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('deepseek', value),
+          isReconfig ? config.providers.deepseek.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.deepseek.apiKey = key;
+          config.providers.deepseek.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'openai') {
+        const mask = isReconfig && config.providers.openai.apiKey ? ` [${maskKey(config.providers.openai.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  OpenAI API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('openai', value),
+          isReconfig ? config.providers.openai.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.openai.apiKey = key;
+          config.providers.openai.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'anthropic') {
+        const mask = isReconfig && config.providers.anthropic.apiKey ? ` [${maskKey(config.providers.anthropic.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Anthropic API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('anthropic', value),
+          isReconfig ? config.providers.anthropic.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.anthropic.apiKey = key;
+          config.providers.anthropic.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'grok') {
+        const mask = isReconfig && config.providers.grok.apiKey ? ` [${maskKey(config.providers.grok.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Grok API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('grok', value),
+          isReconfig ? config.providers.grok.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.grok.apiKey = key;
+          config.providers.grok.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'ollamaCloud') {
+        const mask = isReconfig && config.providers.ollamaCloud.apiKey ? ` [${maskKey(config.providers.ollamaCloud.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Ollama Cloud API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('ollamaCloud', value),
+          isReconfig ? config.providers.ollamaCloud.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.ollamaCloud.apiKey = key;
+          config.providers.ollamaCloud.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'ollamaLocal') {
+        config.providers.ollamaLocal.baseUrl = (await promptValidatedValue(
+          chalk.white(`  Ollama Local base URL [${config.providers.ollamaLocal.baseUrl}]: `),
+          validateBaseUrl,
+          config.providers.ollamaLocal.baseUrl,
+        ))!;
+
+        config.providers.ollamaLocal.model = (await promptValidatedValue(
+          chalk.white(`  Ollama Local model [${config.providers.ollamaLocal.model}]: `),
+          validateModelName,
+          config.providers.ollamaLocal.model,
+        ))!;
+
+        config.providers.ollamaLocal.enabled = true;
+      }
+    }
+
+    const configuredProviders = getConfiguredProviderNames(config);
+    if (configuredProviders.length === 0) {
+      console.log(chalk.red('  You need to configure at least one LLM provider to continue.'));
+      console.log(chalk.dim('  Let’s try that step again.'));
+      console.log('');
       continue;
     }
 
-    if (provider === 'openai') {
-      const mask = isReconfig && config.providers.openai.apiKey ? ` [${maskKey(config.providers.openai.apiKey)}]` : '';
-      config.providers.openai.apiKey = await promptValidatedValue(
-        chalk.white(`  OpenAI API key${mask}: `),
-        (value) => validateApiKey('openai', value),
-        isReconfig ? config.providers.openai.apiKey : undefined,
-      );
-      config.providers.openai.enabled = true;
-      continue;
-    }
-
-    if (provider === 'anthropic') {
-      const mask = isReconfig && config.providers.anthropic.apiKey ? ` [${maskKey(config.providers.anthropic.apiKey)}]` : '';
-      config.providers.anthropic.apiKey = await promptValidatedValue(
-        chalk.white(`  Anthropic API key${mask}: `),
-        (value) => validateApiKey('anthropic', value),
-        isReconfig ? config.providers.anthropic.apiKey : undefined,
-      );
-      config.providers.anthropic.enabled = true;
-      continue;
-    }
-
-    if (provider === 'grok') {
-      const mask = isReconfig && config.providers.grok.apiKey ? ` [${maskKey(config.providers.grok.apiKey)}]` : '';
-      config.providers.grok.apiKey = await promptValidatedValue(
-        chalk.white(`  Grok API key${mask}: `),
-        (value) => validateApiKey('grok', value),
-        isReconfig ? config.providers.grok.apiKey : undefined,
-      );
-      config.providers.grok.enabled = true;
-      continue;
-    }
-
-    if (provider === 'ollamaCloud') {
-      const mask = isReconfig && config.providers.ollamaCloud.apiKey ? ` [${maskKey(config.providers.ollamaCloud.apiKey)}]` : '';
-      config.providers.ollamaCloud.apiKey = await promptValidatedValue(
-        chalk.white(`  Ollama Cloud API key${mask}: `),
-        (value) => validateApiKey('ollamaCloud', value),
-        isReconfig ? config.providers.ollamaCloud.apiKey : undefined,
-      );
-      config.providers.ollamaCloud.enabled = true;
-      continue;
-    }
-
-    if (provider === 'ollamaLocal') {
-      config.providers.ollamaLocal.baseUrl = await promptValidatedValue(
-        chalk.white(`  Ollama Local base URL [${config.providers.ollamaLocal.baseUrl}]: `),
-        validateBaseUrl,
-        config.providers.ollamaLocal.baseUrl,
-      );
-
-      config.providers.ollamaLocal.model = await promptValidatedValue(
-        chalk.white(`  Ollama Local model [${config.providers.ollamaLocal.model}]: `),
-        validateModelName,
-        config.providers.ollamaLocal.model,
-      );
-
-      config.providers.ollamaLocal.enabled = true;
-    }
+    await chooseDefaultProvider(config);
+    break;
   }
-
-  await chooseDefaultProvider(config);
 
   hr();
   console.log('');
@@ -392,6 +424,11 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
     console.log(chalk.dim('  Leave empty to keep current value. Enter "none" to disable.'));
   } else {
     console.log(chalk.dim('  Leave empty to skip. You can add it later.'));
+    console.log(chalk.dim('  To create a bot token:'));
+    console.log(chalk.dim('    1. Open Telegram and message @BotFather'));
+    console.log(chalk.dim('    2. Run /newbot and follow the prompts'));
+    console.log(chalk.dim('    3. Copy the bot token BotFather gives you'));
+    console.log(chalk.dim('    4. Paste that token here'));
   }
   console.log('');
 
