@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { Command } from 'commander';
 import readline from 'node:readline';
 import chalk from 'chalk';
-import figlet from 'figlet';
+
 import { loadConfig, saveConfig, isSetupComplete, getMercuryHome, ensureCreatorField, clearTelegramPairing, isProviderConfigured } from './utils/config.js';
 import type { MercuryConfig } from './utils/config.js';
 import type { ProviderName } from './utils/config.js';
