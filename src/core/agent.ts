@@ -32,6 +32,18 @@ class ToolCallLoopDetector {
   private maxEntries = 16;
   private aborted = false;
 
+  private static readonly HIGH_TOLERANCE_TOOLS = new Set([
+    'fetch_url',
+    'read_file',
+    'list_dir',
+    'web_search',
+    'github_api',
+  ]);
+
+  private static getSameToolThreshold(toolName: string): number {
+    return ToolCallLoopDetector.HIGH_TOLERANCE_TOOLS.has(toolName) ? 6 : 3;
+  }
+
   record(toolName: string, params: Record<string, any>): void {
     const paramsKey = JSON.stringify(params).slice(0, 100);
     this.recentCalls.push({ tool: toolName, params: paramsKey });
@@ -59,7 +71,7 @@ class ToolCallLoopDetector {
       return {
         tool: last.tool,
         count: identicalCount,
-        message: `You called "${last.tool}" ${identicalCount} times with identical parameters and got the same result. Stop repeating this call entirely.`,
+        message: `You called "${last.tool}" ${identicalCount} times with the same parameters and got the same result. This is a loop — stop repeating this call entirely.`,
       };
     }
 
@@ -72,12 +84,14 @@ class ToolCallLoopDetector {
         break;
       }
     }
-    if (sameToolCount >= 3) {
+
+    const threshold = ToolCallLoopDetector.getSameToolThreshold(lastTool);
+    if (sameToolCount >= threshold) {
       this.aborted = true;
       return {
         tool: lastTool,
         count: sameToolCount,
-        message: `You called "${lastTool}" ${sameToolCount} times in a row with slightly different parameters and it isn't working. Stop — the approach is wrong. Step back, tell the user what you tried and what failed, and suggest alternatives instead of retrying.`,
+        message: `You called "${lastTool}" ${sameToolCount} times in a row with different parameters and it isn't producing useful progress. Stop — the approach is wrong. Step back, tell the user what you tried, what failed, and suggest alternatives.`,
       };
     }
 
