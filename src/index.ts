@@ -4,8 +4,10 @@ import { dirname, join } from 'node:path';
 import { Command } from 'commander';
 import readline from 'node:readline';
 import chalk from 'chalk';
-import { loadConfig, saveConfig, isSetupComplete, getMercuryHome, ensureCreatorField } from './utils/config.js';
+import figlet from 'figlet';
+import { loadConfig, saveConfig, isSetupComplete, getMercuryHome, ensureCreatorField, clearTelegramPairing, isProviderConfigured } from './utils/config.js';
 import type { MercuryConfig } from './utils/config.js';
+import type { ProviderName } from './utils/config.js';
 import { logger } from './utils/logger.js';
 import { Identity } from './soul/identity.js';
 import { ShortTermMemory, LongTermMemory, EpisodicMemory } from './memory/store.js';
@@ -78,6 +80,194 @@ function maskKey(key: string): string {
   return key.slice(0, 4) + '••••' + key.slice(-4);
 }
 
+const PROVIDER_OPTIONS: Array<{ key: ProviderName; label: string }> = [
+  { key: 'deepseek', label: 'DeepSeek' },
+  { key: 'openai', label: 'OpenAI' },
+  { key: 'anthropic', label: 'Anthropic' },
+  { key: 'grok', label: 'Grok (xAI)' },
+  { key: 'ollamaCloud', label: 'Ollama Cloud' },
+  { key: 'ollamaLocal', label: 'Ollama Local' },
+];
+
+function getConfiguredProviderNames(config: MercuryConfig): ProviderName[] {
+  return PROVIDER_OPTIONS
+    .map((option) => option.key)
+    .filter((key) => isProviderConfigured(config.providers[key]));
+}
+
+function getProviderLabel(name: ProviderName): string {
+  return PROVIDER_OPTIONS.find((option) => option.key === name)?.label || name;
+}
+
+function parseProviderSelection(input: string): ProviderName[] | null {
+  const values = input.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
+  if (values.length === 0) return [];
+
+  const selected: ProviderName[] = [];
+  for (const value of values) {
+    const index = parseInt(value, 10);
+    if (isNaN(index) || index < 1 || index > PROVIDER_OPTIONS.length) {
+      return null;
+    }
+    const provider = PROVIDER_OPTIONS[index - 1].key;
+    if (!selected.includes(provider)) {
+      selected.push(provider);
+    }
+  }
+  return selected;
+}
+
+async function chooseProvidersToConfigure(config: MercuryConfig, isReconfig: boolean): Promise<ProviderName[]> {
+  const configured = getConfiguredProviderNames(config);
+
+  while (true) {
+    for (let i = 0; i < PROVIDER_OPTIONS.length; i++) {
+      const option = PROVIDER_OPTIONS[i];
+      const status = configured.includes(option.key) ? ' (configured)' : '';
+      console.log(chalk.white(`    ${i + 1}. ${option.label}${status}`));
+    }
+    console.log('');
+
+    const prompt = isReconfig
+      ? chalk.white('  Choose providers to configure [comma-separated, Enter keeps current]: ')
+      : chalk.white('  Choose providers to configure [comma-separated, Enter for DeepSeek]: ');
+
+    const input = await ask(prompt);
+    const parsed = parseProviderSelection(input);
+    if (parsed === null) {
+      console.log(chalk.red('  Please choose valid provider numbers, like `1` or `1,3,5`.'));
+      console.log('');
+      continue;
+    }
+
+    if (parsed.length > 0) return parsed;
+    if (!isReconfig) return ['deepseek'];
+    return configured.length > 0 ? configured : ['deepseek'];
+  }
+}
+
+async function chooseDefaultProvider(config: MercuryConfig): Promise<void> {
+  const configured = getConfiguredProviderNames(config);
+
+  if (configured.length === 0) {
+    return;
+  }
+
+  if (configured.length === 1) {
+    config.providers.default = configured[0];
+    console.log(chalk.dim(`  Default provider set to ${getProviderLabel(configured[0])}`));
+    return;
+  }
+
+  const suggested = configured.includes('deepseek') ? 'deepseek' : configured[0];
+
+  console.log('');
+  console.log(chalk.bold.white('  Default Provider'));
+  console.log(chalk.dim('  Select the LLM provider Mercury should use first.'));
+  console.log('');
+  for (let i = 0; i < configured.length; i++) {
+    const provider = configured[i];
+    const recommended = provider === suggested ? ' (recommended)' : '';
+    const current = provider === config.providers.default ? ' (current)' : '';
+    console.log(chalk.white(`    ${i + 1}. ${getProviderLabel(provider)}${recommended}${current}`));
+  }
+  console.log('');
+
+  while (true) {
+    const choice = await ask(chalk.white(`  Choose [1-${configured.length}] [Enter for ${getProviderLabel(suggested)}]: `));
+    if (!choice) {
+      config.providers.default = suggested;
+      return;
+    }
+
+    const num = parseInt(choice, 10);
+    if (num >= 1 && num <= configured.length) {
+      config.providers.default = configured[num - 1];
+      return;
+    }
+
+    console.log(chalk.red('  Please choose a valid number from the list above.'));
+  }
+}
+
+function looksLikeToken(value: string, minLength: number = 20): boolean {
+  return value.length >= minLength && !/\s/.test(value) && /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
+function validateApiKey(provider: ProviderName, value: string): string | null {
+  if (provider === 'openai') {
+    return /^sk-(proj-|svcacct-)?[A-Za-z0-9_-]{16,}$/i.test(value)
+      ? null
+      : 'OpenAI keys must start with `sk-`, `sk-proj-`, or `sk-svcacct-`.';
+  }
+
+  if (provider === 'anthropic') {
+    return /^sk-ant-[A-Za-z0-9_-]{16,}$/i.test(value)
+      ? null
+      : 'Anthropic keys must start with `sk-ant-`.';
+  }
+
+  if (provider === 'deepseek') {
+    return /^sk-[A-Za-z0-9_-]{16,}$/i.test(value)
+      ? null
+      : 'DeepSeek keys must start with `sk-`.';
+  }
+
+  if (provider === 'grok') {
+    return looksLikeToken(value)
+      ? null
+      : 'Grok keys must look like a real API token: long, no spaces, and not plain text.';
+  }
+
+  if (provider === 'ollamaCloud') {
+    return looksLikeToken(value)
+      ? null
+      : 'Ollama Cloud keys must look like a real API token: long, no spaces, and not plain text.';
+  }
+
+  return null;
+}
+
+function validateBaseUrl(value: string): string | null {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return 'Base URL must start with http:// or https://.';
+    }
+    return null;
+  } catch {
+    return 'Please enter a valid URL.';
+  }
+}
+
+function validateModelName(value: string): string | null {
+  if (!value.trim()) return 'Model name is required.';
+  if (/\s/.test(value)) return 'Model name cannot contain spaces.';
+  return null;
+}
+
+async function promptValidatedValue(
+  prompt: string,
+  validator: (value: string) => string | null,
+  existingValue?: string,
+  options?: { allowSkip?: boolean },
+): Promise<string | undefined> {
+  while (true) {
+    const value = await ask(prompt);
+    if (!value) {
+      if (existingValue) return existingValue;
+      if (options?.allowSkip) return undefined;
+      console.log(chalk.red('  A value is required here.'));
+      continue;
+    }
+
+    const error = validator(value);
+    if (!error) return value;
+
+    console.log(chalk.red(`  ${error}`));
+  }
+}
+
 function appendToEnv(key: string, value: string): void {
   const envPath = join(getMercuryHome(), '.env');
   let envContent = '';
@@ -140,55 +330,119 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
   console.log('');
   console.log(chalk.bold.white('  LLM Providers'));
   if (isReconfig) {
-    console.log(chalk.dim('  Current keys shown masked. Enter new value to change, Enter to keep.'));
+    console.log(chalk.dim('  Choose which providers to configure now. Existing values are shown where available.'));
   } else {
-    console.log(chalk.dim('  At least one API key is required.'));
+    console.log(chalk.dim('  Choose one or more providers. Press Enter to configure DeepSeek by default.'));
   }
   console.log('');
 
-  const dsMask = isReconfig && config.providers.deepseek.apiKey ? ` [${maskKey(config.providers.deepseek.apiKey)}]` : '';
-  const deepseekKey = await ask(chalk.white(`  DeepSeek API key${dsMask}: `));
-  if (deepseekKey) {
-    config.providers.deepseek.apiKey = deepseekKey;
-  }
-
-  const oaiMask = isReconfig && config.providers.openai.apiKey ? ` [${maskKey(config.providers.openai.apiKey)}]` : ' (Enter to skip)';
-  const openaiKey = await ask(chalk.white(`  OpenAI API key${oaiMask}: `));
-  if (openaiKey) config.providers.openai.apiKey = openaiKey;
-
-  const antMask = isReconfig && config.providers.anthropic.apiKey ? ` [${maskKey(config.providers.anthropic.apiKey)}]` : ' (Enter to skip)';
-  const anthropicKey = await ask(chalk.white(`  Anthropic API key${antMask}: `));
-  if (anthropicKey) config.providers.anthropic.apiKey = anthropicKey;
-
-  const hasKey = config.providers.deepseek.apiKey || config.providers.openai.apiKey || config.providers.anthropic.apiKey;
-  if (!hasKey) {
-    console.log(chalk.red('\n  At least one LLM API key is required.'));
-    process.exit(1);
-  }
-
-  const availableProviders: string[] = [];
-  if (config.providers.deepseek.apiKey) availableProviders.push('deepseek');
-  if (config.providers.openai.apiKey) availableProviders.push('openai');
-  if (config.providers.anthropic.apiKey) availableProviders.push('anthropic');
-
-  if (isReconfig && availableProviders.length > 1) {
+  while (true) {
+    const selectedProviders = await chooseProvidersToConfigure(config, isReconfig);
     console.log('');
-    console.log(chalk.bold.white('  Default Provider'));
-    console.log(chalk.dim('  Select the default LLM provider (the one used first).'));
-    console.log('');
-    for (let i = 0; i < availableProviders.length; i++) {
-      const marker = availableProviders[i] === config.providers.default ? ' (current)' : '';
-      console.log(chalk.white(`    ${i + 1}. ${availableProviders[i]}${marker}`));
+
+    for (const provider of selectedProviders) {
+      if (provider === 'deepseek') {
+        const mask = isReconfig && config.providers.deepseek.apiKey ? ` [${maskKey(config.providers.deepseek.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  DeepSeek API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('deepseek', value),
+          isReconfig ? config.providers.deepseek.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.deepseek.apiKey = key;
+          config.providers.deepseek.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'openai') {
+        const mask = isReconfig && config.providers.openai.apiKey ? ` [${maskKey(config.providers.openai.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  OpenAI API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('openai', value),
+          isReconfig ? config.providers.openai.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.openai.apiKey = key;
+          config.providers.openai.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'anthropic') {
+        const mask = isReconfig && config.providers.anthropic.apiKey ? ` [${maskKey(config.providers.anthropic.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Anthropic API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('anthropic', value),
+          isReconfig ? config.providers.anthropic.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.anthropic.apiKey = key;
+          config.providers.anthropic.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'grok') {
+        const mask = isReconfig && config.providers.grok.apiKey ? ` [${maskKey(config.providers.grok.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Grok API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('grok', value),
+          isReconfig ? config.providers.grok.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.grok.apiKey = key;
+          config.providers.grok.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'ollamaCloud') {
+        const mask = isReconfig && config.providers.ollamaCloud.apiKey ? ` [${maskKey(config.providers.ollamaCloud.apiKey)}]` : '';
+        const key = await promptValidatedValue(
+          chalk.white(`  Ollama Cloud API key${mask}${isReconfig ? '' : ' (Enter to skip)'}: `),
+          (value) => validateApiKey('ollamaCloud', value),
+          isReconfig ? config.providers.ollamaCloud.apiKey : undefined,
+          { allowSkip: true },
+        );
+        if (key) {
+          config.providers.ollamaCloud.apiKey = key;
+          config.providers.ollamaCloud.enabled = true;
+        }
+        continue;
+      }
+
+      if (provider === 'ollamaLocal') {
+        config.providers.ollamaLocal.baseUrl = (await promptValidatedValue(
+          chalk.white(`  Ollama Local base URL [${config.providers.ollamaLocal.baseUrl}]: `),
+          validateBaseUrl,
+          config.providers.ollamaLocal.baseUrl,
+        ))!;
+
+        config.providers.ollamaLocal.model = (await promptValidatedValue(
+          chalk.white(`  Ollama Local model [${config.providers.ollamaLocal.model}]: `),
+          validateModelName,
+          config.providers.ollamaLocal.model,
+        ))!;
+
+        config.providers.ollamaLocal.enabled = true;
+      }
     }
-    console.log('');
-    const choice = await ask(chalk.white(`  Choose [1-${availableProviders.length}] [Enter to keep ${config.providers.default}]: `));
-    const num = parseInt(choice, 10);
-    if (num >= 1 && num <= availableProviders.length) {
-      config.providers.default = availableProviders[num - 1];
+
+    const configuredProviders = getConfiguredProviderNames(config);
+    if (configuredProviders.length === 0) {
+      console.log(chalk.red('  You need to configure at least one LLM provider to continue.'));
+      console.log(chalk.dim('  Let’s try that step again.'));
+      console.log('');
+      continue;
     }
-  } else if (!isReconfig) {
-    config.providers.default = availableProviders[0];
-    console.log(chalk.dim(`  Default provider set to ${config.providers.default}`));
+
+    await chooseDefaultProvider(config);
+    break;
   }
 
   hr();
@@ -198,6 +452,11 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
     console.log(chalk.dim('  Leave empty to keep current value. Enter "none" to disable.'));
   } else {
     console.log(chalk.dim('  Leave empty to skip. You can add it later.'));
+    console.log(chalk.dim('  To create a bot token:'));
+    console.log(chalk.dim('    1. Open Telegram and message @BotFather'));
+    console.log(chalk.dim('    2. Run /newbot and follow the prompts'));
+    console.log(chalk.dim('    3. Copy the bot token BotFather gives you'));
+    console.log(chalk.dim('    4. Paste that token here'));
   }
   console.log('');
 
@@ -206,7 +465,11 @@ async function configure(existingConfig?: MercuryConfig): Promise<void> {
   if (isReconfig && telegramToken.toLowerCase() === 'none') {
     config.channels.telegram.enabled = false;
     config.channels.telegram.botToken = '';
+    clearTelegramPairing(config);
   } else if (telegramToken) {
+    if (telegramToken !== config.channels.telegram.botToken) {
+      clearTelegramPairing(config);
+    }
     config.channels.telegram.botToken = telegramToken;
     config.channels.telegram.enabled = true;
   }
@@ -336,10 +599,10 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
 
   if (!providers.hasProviders()) {
     if (isDaemon) {
-      logger.error('No LLM providers available. Run `mercury doctor` to configure API keys.');
+      logger.error('No LLM providers available. Run `mercury doctor` to configure providers.');
       return;
     }
-    console.log(chalk.red('  No LLM providers available. Run `mercury doctor` to configure API keys.'));
+    console.log(chalk.red('  No LLM providers available. Run `mercury doctor` to configure providers.'));
     process.exit(1);
   }
 
@@ -383,6 +646,21 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
     }
   });
 
+  capabilities.setSendMessageHandler(async (content: string) => {
+    const telegram = channels.get('telegram');
+    const pairedChatId = config.channels.telegram.pairedChatId;
+    const pairedUserId = config.channels.telegram.pairedUserId;
+
+    if (!config.channels.telegram.enabled || !telegram) {
+      throw new Error('Telegram is not configured. Add a bot token in setup or run `mercury doctor`.');
+    }
+
+    if (pairedChatId == null || pairedUserId == null) {
+      throw new Error('Telegram is not paired. Complete the pairing flow with /start or /pair from the Telegram owner account.');
+    }
+
+    await telegram.send(content, `telegram:${pairedChatId}`);
+  });
   if (process.env.GITHUB_TOKEN) {
     setGitHubToken(process.env.GITHUB_TOKEN);
   }
@@ -571,8 +849,9 @@ program
     if (config.identity.creator) {
       console.log(`  Creator:  ${chalk.white(config.identity.creator)}`);
     }
-    console.log(`  Provider: ${chalk.white(config.providers.default)}`);
+    console.log(`  Provider: ${chalk.white(getProviderLabel(config.providers.default))}`);
     console.log(`  Telegram: ${config.channels.telegram.enabled ? chalk.green('enabled') : chalk.dim('disabled')}`);
+    console.log(`  Telegram Pairing: ${config.channels.telegram.pairedUserId != null ? chalk.green(`paired to user ${config.channels.telegram.pairedUserId}${config.channels.telegram.pairedUsername ? ` (@${config.channels.telegram.pairedUsername})` : ''}`) : chalk.dim('unpaired')}`);
     console.log(`  Skills:   ${skills.length > 0 ? chalk.green(skills.map(s => s.name).join(', ')) : chalk.dim('none')}`);
     console.log(`  Budget:   ${chalk.white(config.tokens.dailyBudget.toLocaleString())} tokens/day`);
     console.log(`  Setup:    ${isSetupComplete() ? chalk.green('complete') : chalk.red('not done')}`);
@@ -586,6 +865,37 @@ program
   .description('Show capabilities and commands manual')
   .action(() => {
     console.log(getManual());
+  });
+
+const telegramCmd = program
+  .command('telegram')
+  .description('Manage Telegram pairing and access');
+
+telegramCmd
+  .command('unpair')
+  .description('Clear the paired Telegram owner for this Mercury instance')
+  .action(() => {
+    const config = loadConfig();
+    const daemon = getDaemonStatus();
+    if (config.channels.telegram.pairedUserId == null) {
+      console.log('');
+      console.log(chalk.dim('  Telegram is already unpaired.'));
+      console.log('');
+      return;
+    }
+
+    clearTelegramPairing(config);
+    saveConfig(config);
+
+    console.log('');
+    console.log(chalk.green('  ✓ Telegram pairing cleared.'));
+    if (daemon.running) {
+      console.log(chalk.dim('  Restarting the background daemon to apply the change immediately...'));
+      restartDaemon();
+    } else {
+      console.log(chalk.dim('  The next private Telegram user to send /start will pair this Mercury instance.'));
+    }
+    console.log('');
   });
 
 const serviceCmd = program

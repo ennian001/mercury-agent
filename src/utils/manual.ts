@@ -19,6 +19,7 @@ export function getManual(): string {
     ['edit_file', 'Replace specific text in a file', 'path, old_string, new_string'],
     ['list_dir', 'List directory contents', 'path'],
     ['delete_file', 'Delete a file', 'path'],
+    ['send_message', 'Send a message to the paired Telegram owner', 'content'],
     ['run_command', 'Execute a shell command', 'command'],
     ['approve_command', 'Permanently approve a command type', 'command (e.g. "curl")'],
     ['fetch_url', 'Fetch a URL and return content', 'url, format? (text/markdown)'],
@@ -58,6 +59,7 @@ export function getManual(): string {
     ['mercury doctor', 'Reconfigure settings (Enter keeps current)'],
     ['mercury setup', 'Re-run the setup wizard'],
     ['mercury status', 'Show config and daemon status'],
+    ['mercury telegram unpair', 'Clear the paired Telegram owner'],
     ['mercury help', 'Show this manual'],
     ['mercury service install', 'Install as system service (auto-start)'],
     ['mercury service uninstall', 'Uninstall system service'],
@@ -75,6 +77,8 @@ export function getManual(): string {
   sections.push('');
 
   const chat = [
+    ['/start', 'Pair this Telegram account to Mercury'],
+    ['/pair', 'Pair this Telegram account to Mercury'],
     ['/help', 'Show this manual'],
     ['/status', 'Show config and budget info'],
     ['/tools', 'List currently loaded tools'],
@@ -82,6 +86,7 @@ export function getManual(): string {
     ['/stream', 'Toggle text streaming on/off (Telegram)'],
     ['/stream on', 'Enable streaming (live text updates)'],
     ['/stream off', 'Disable streaming (single message)'],
+    ['/unpair', 'Remove Telegram pairing for this Mercury instance'],
   ];
 
   for (const [cmd, desc] of chat) {

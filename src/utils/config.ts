@@ -24,6 +24,14 @@ export interface ProviderConfig {
   enabled: boolean;
 }
 
+export type ProviderName =
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'grok'
+  | 'ollamaCloud'
+  | 'ollamaLocal';
+
 export interface MercuryConfig {
   identity: {
     name: string;
@@ -31,10 +39,13 @@ export interface MercuryConfig {
     creator?: string;
   };
   providers: {
-    default: string;
+    default: ProviderName;
     openai: ProviderConfig;
     anthropic: ProviderConfig;
     deepseek: ProviderConfig;
+    grok: ProviderConfig;
+    ollamaCloud: ProviderConfig;
+    ollamaLocal: ProviderConfig;
   };
   channels: {
     telegram: {
@@ -43,6 +54,9 @@ export interface MercuryConfig {
       webhookUrl?: string;
       allowedChatIds?: number[];
       streaming?: boolean;
+      pairedUserId?: number;
+      pairedChatId?: number;
+      pairedUsername?: string;
     };
   };
   github: {
@@ -88,7 +102,7 @@ export function getDefaultConfig(): MercuryConfig {
       creator: getEnv('MERCURY_CREATOR', ''),
     },
     providers: {
-      default: getEnv('DEFAULT_PROVIDER', 'openai'),
+      default: getEnv('DEFAULT_PROVIDER', 'deepseek') as ProviderName,
       openai: {
         name: 'openai',
         apiKey: getEnv('OPENAI_API_KEY', ''),
@@ -109,6 +123,27 @@ export function getDefaultConfig(): MercuryConfig {
         baseUrl: getEnv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'),
         model: getEnv('DEEPSEEK_MODEL', 'deepseek-chat'),
         enabled: getEnvBool('DEEPSEEK_ENABLED', true),
+      },
+      grok: {
+        name: 'grok',
+        apiKey: getEnv('GROK_API_KEY', ''),
+        baseUrl: getEnv('GROK_BASE_URL', 'https://api.x.ai/v1'),
+        model: getEnv('GROK_MODEL', 'grok-4'),
+        enabled: getEnvBool('GROK_ENABLED', true),
+      },
+      ollamaCloud: {
+        name: 'ollamaCloud',
+        apiKey: getEnv('OLLAMA_CLOUD_API_KEY', ''),
+        baseUrl: getEnv('OLLAMA_CLOUD_BASE_URL', 'https://ollama.com/api'),
+        model: getEnv('OLLAMA_CLOUD_MODEL', 'gpt-oss:120b'),
+        enabled: getEnvBool('OLLAMA_CLOUD_ENABLED', true),
+      },
+      ollamaLocal: {
+        name: 'ollamaLocal',
+        apiKey: '',
+        baseUrl: getEnv('OLLAMA_LOCAL_BASE_URL', 'http://127.0.0.1:11434/api'),
+        model: getEnv('OLLAMA_LOCAL_MODEL', 'gpt-oss:20b'),
+        enabled: getEnvBool('OLLAMA_LOCAL_ENABLED', false),
       },
     },
     channels: {
@@ -200,5 +235,27 @@ function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>)
 
 export function getActiveProviders(config: MercuryConfig): ProviderConfig[] {
   return Object.values(config.providers)
-    .filter((p): p is ProviderConfig => typeof p === 'object' && p.enabled && p.apiKey.length > 0);
+    .filter((p): p is ProviderConfig => typeof p === 'object' && isProviderConfigured(p));
+}
+
+export function isProviderConfigured(provider: ProviderConfig): boolean {
+  if (!provider.enabled) return false;
+  if (provider.name === 'ollamaLocal') {
+    return provider.baseUrl.length > 0 && provider.model.length > 0;
+  }
+  return provider.apiKey.length > 0;
+}
+
+export function setTelegramPairing(config: MercuryConfig, userId: number, chatId: number, username?: string): MercuryConfig {
+  config.channels.telegram.pairedUserId = userId;
+  config.channels.telegram.pairedChatId = chatId;
+  config.channels.telegram.pairedUsername = username || undefined;
+  return config;
+}
+
+export function clearTelegramPairing(config: MercuryConfig): MercuryConfig {
+  delete config.channels.telegram.pairedUserId;
+  delete config.channels.telegram.pairedChatId;
+  delete config.channels.telegram.pairedUsername;
+  return config;
 }

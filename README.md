@@ -181,6 +181,9 @@ Configure multiple LLM providers. Mercury tries them in order and falls back aut
 - **DeepSeek** — default, cost-effective
 - **OpenAI** — GPT-4o-mini and others
 - **Anthropic** — Claude and others
+- **Grok / xAI** — OpenAI-compatible Grok models
+- **Ollama Cloud** — remote Ollama models via API key
+- **Ollama Local** — models running on your local Ollama instance
 
 ## Architecture
 

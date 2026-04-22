@@ -1,7 +1,9 @@
 import type { MercuryConfig, ProviderConfig } from '../utils/config.js';
+import { isProviderConfigured } from '../utils/config.js';
 import type { BaseProvider } from './base.js';
 import { OpenAICompatProvider } from './openai-compat.js';
 import { AnthropicProvider } from './anthropic.js';
+import { OllamaProvider } from './ollama.js';
 import { logger } from '../utils/logger.js';
 
 export class ProviderRegistry {
@@ -13,17 +15,25 @@ export class ProviderRegistry {
     this.defaultName = config.providers.default;
 
     const entries: ProviderConfig[] = [
+      config.providers.deepseek,
       config.providers.openai,
       config.providers.anthropic,
-      config.providers.deepseek,
+      config.providers.grok,
+      config.providers.ollamaCloud,
+      config.providers.ollamaLocal,
     ];
 
     for (const pc of entries) {
-      if (!pc.enabled || !pc.apiKey) continue;
+      if (!isProviderConfigured(pc)) continue;
       try {
-        const provider = pc.name === 'anthropic'
-          ? new AnthropicProvider(pc)
-          : new OpenAICompatProvider(pc);
+        let provider: BaseProvider;
+        if (pc.name === 'anthropic') {
+          provider = new AnthropicProvider(pc);
+        } else if (pc.name === 'ollamaCloud' || pc.name === 'ollamaLocal') {
+          provider = new OllamaProvider(pc);
+        } else {
+          provider = new OpenAICompatProvider(pc);
+        }
         this.providers.set(pc.name, provider);
         logger.info({ provider: pc.name, model: pc.model }, 'Provider registered');
       } catch (err) {

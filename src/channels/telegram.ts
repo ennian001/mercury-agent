@@ -5,6 +5,7 @@ import { autoRetry } from '@grammyjs/auto-retry';
 import type { ChannelMessage } from '../types/channel.js';
 import { BaseChannel } from './base.js';
 import type { MercuryConfig } from '../utils/config.js';
+import { saveConfig, clearTelegramPairing, setTelegramPairing } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { mdToTelegram } from '../utils/markdown.js';
 
@@ -22,6 +23,7 @@ export class TelegramChannel extends BaseChannel {
 
   constructor(private config: MercuryConfig) {
     super();
+    this.ownerChatId = config.channels.telegram.pairedChatId ?? null;
   }
 
   setChatCommandContext(ctx: import('../capabilities/registry.js').ChatCommandContext): void {
@@ -40,10 +42,40 @@ export class TelegramChannel extends BaseChannel {
 
     bot.on('message:text', async (ctx) => {
       const chatId = ctx.chat.id;
-      if (!this.isAllowedChat(chatId)) return;
+      const userId = ctx.from?.id;
+      const text = ctx.message.text?.trim() || '';
+
+      if (!userId) return;
+
+      if (ctx.chat.type !== 'private') {
+        await this.sendDirectMessage(chatId, 'This bot is only available in private one-to-one chats.');
+        return;
+      }
+
+      if (!this.isPaired()) {
+        await this.handleUnpairedMessage(userId, chatId, text, ctx.from?.username);
+        return;
+      }
+
+      if (!this.isAuthorizedUser(userId)) {
+        await this.sendDirectMessage(chatId, 'This bot is not available to you.');
+        return;
+      }
 
       this.ownerChatId = chatId;
       logger.info({ chatId, text: ctx.message.text?.slice(0, 50) }, 'Telegram message received');
+
+      const command = text.toLowerCase();
+      if (command === '/start' || command === '/pair') {
+        await this.sendDirectMessage(chatId, this.getPairingStatusMessage());
+        return;
+      }
+
+      if (command === '/unpair') {
+        this.unpair();
+        await this.sendDirectMessage(chatId, 'Telegram pairing removed. Send /start to pair this Mercury instance again.');
+        return;
+      }
 
       const msg: ChannelMessage = {
         id: ctx.message.message_id.toString(),
@@ -92,6 +124,8 @@ export class TelegramChannel extends BaseChannel {
     if (!this.bot) return;
 
     const commands = [
+      { command: 'start', description: 'Pair this Telegram account to Mercury' },
+      { command: 'pair', description: 'Pair this Telegram account to Mercury' },
       { command: 'help', description: 'Show capabilities and commands manual' },
       { command: 'status', description: 'Show agent config, budget, and uptime' },
       { command: 'tools', description: 'List all loaded tools' },
@@ -101,6 +135,7 @@ export class TelegramChannel extends BaseChannel {
       { command: 'budget_reset', description: 'Reset token usage to zero' },
       { command: 'budget_set', description: 'Set new daily token budget' },
       { command: 'stream', description: 'Toggle text streaming on/off' },
+      { command: 'unpair', description: 'Remove Telegram pairing for this Mercury instance' },
     ];
 
     try {
@@ -366,19 +401,62 @@ export class TelegramChannel extends BaseChannel {
   }
 
   private parseChatId(targetId?: string): number | null {
-    if (!targetId) return this.ownerChatId;
+    if (!targetId) return this.ownerChatId ?? this.config.channels.telegram.pairedChatId ?? null;
     if (targetId.startsWith('telegram:')) {
       const raw = Number(targetId.split(':')[1]);
-      return isNaN(raw) ? this.ownerChatId : raw;
+      return isNaN(raw) ? this.ownerChatId ?? this.config.channels.telegram.pairedChatId ?? null : raw;
     }
-    if (targetId === 'notification') return this.ownerChatId;
+    if (targetId === 'notification') return this.ownerChatId ?? this.config.channels.telegram.pairedChatId ?? null;
     const num = Number(targetId);
-    return isNaN(num) ? this.ownerChatId : num;
+    return isNaN(num) ? this.ownerChatId ?? this.config.channels.telegram.pairedChatId ?? null : num;
   }
 
-  private isAllowedChat(chatId: number): boolean {
-    const allowed = this.config.channels.telegram.allowedChatIds;
-    if (!allowed || allowed.length === 0) return true;
-    return allowed.includes(chatId);
+  private isPaired(): boolean {
+    return typeof this.config.channels.telegram.pairedUserId === 'number';
+  }
+
+  private isAuthorizedUser(userId: number): boolean {
+    return this.config.channels.telegram.pairedUserId === userId;
+  }
+
+  private async handleUnpairedMessage(userId: number, chatId: number, text: string, username?: string): Promise<void> {
+    const command = text.toLowerCase();
+    if (command === '/start' || command === '/pair') {
+      setTelegramPairing(this.config, userId, chatId, username);
+      saveConfig(this.config);
+      this.ownerChatId = chatId;
+      logger.info({ chatId, userId, username }, 'Telegram paired to owner');
+      await this.sendDirectMessage(chatId, this.getPairingStatusMessage(true));
+      return;
+    }
+
+    await this.sendDirectMessage(
+      chatId,
+      'This Mercury instance is not paired yet. Send /start to pair this bot to your Telegram account.',
+    );
+  }
+
+  private getPairingStatusMessage(newlyPaired: boolean = false): string {
+    const username = this.config.channels.telegram.pairedUsername
+      ? ` (@${this.config.channels.telegram.pairedUsername})`
+      : '';
+    const prefix = newlyPaired ? 'Telegram paired successfully.' : 'This Telegram account is already paired.';
+    return `${prefix}\n\nOwner user ID: ${this.config.channels.telegram.pairedUserId}${username}`;
+  }
+
+  private unpair(): void {
+    clearTelegramPairing(this.config);
+    saveConfig(this.config);
+    this.ownerChatId = null;
+    logger.info('Telegram pairing cleared');
+  }
+
+  private async sendDirectMessage(chatId: number, content: string): Promise<void> {
+    if (!this.bot) return;
+    try {
+      await this.bot.api.sendMessage(chatId, mdToTelegram(content), { parse_mode: 'HTML' });
+    } catch {
+      await this.bot.api.sendMessage(chatId, content).catch(() => {});
+    }
   }
 }

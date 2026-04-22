@@ -581,11 +581,15 @@ export class Agent {
     if (cmd === '/status') {
       const config = ctx.config();
       const budget = ctx.tokenBudget();
+      const telegramPairing = config.channels.telegram.pairedUserId != null
+        ? `paired to user ${config.channels.telegram.pairedUserId}${config.channels.telegram.pairedUsername ? ` (@${config.channels.telegram.pairedUsername})` : ''}`
+        : 'unpaired';
       const lines = [
         `**${config.identity.name}** — Status`,
         `Owner: ${config.identity.owner || '(not set)'}`,
         `Provider: ${config.providers.default}`,
         `Telegram: ${config.channels.telegram.enabled ? 'enabled' : 'disabled'}`,
+        `Telegram pairing: ${telegramPairing}`,
         `Budget: ${budget.getStatusText()}`,
         `Skills: ${ctx.skillNames().length > 0 ? ctx.skillNames().join(', ') : 'none'}`,
       ];

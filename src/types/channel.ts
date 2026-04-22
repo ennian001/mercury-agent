@@ -22,6 +22,10 @@ export interface TelegramChannelConfig extends ChannelConfig {
   botToken: string;
   webhookUrl?: string;
   allowedChatIds?: number[];
+  streaming?: boolean;
+  pairedUserId?: number;
+  pairedChatId?: number;
+  pairedUsername?: string;
 }
 
 export interface CLIChannelConfig extends ChannelConfig {
