@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { execSync } from 'node:child_process';
 
-export function createGitDiffTool() {
+export function createGitDiffTool(getCwd: () => string) {
   return tool({
     description: 'Show changes between commits, commit and working tree, etc. Shows what has been modified.',
     parameters: z.object({
@@ -14,7 +14,7 @@ export function createGitDiffTool() {
         let cmd = 'git diff';
         if (staged) cmd += ' --cached';
         if (path) cmd += ` -- "${path}"`;
-        const result = execSync(cmd, { encoding: 'utf-8', timeout: 15000 });
+        const result = execSync(cmd, { encoding: 'utf-8', timeout: 15000, cwd: getCwd() });
         if (!result.trim()) return 'No differences found.';
         const truncated = result.length > 15000 ? result.slice(0, 15000) + '\n... (truncated)' : result;
         return truncated;

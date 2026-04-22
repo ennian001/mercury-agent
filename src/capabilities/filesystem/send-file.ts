@@ -1,11 +1,12 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, statSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve, basename, isAbsolute } from 'node:path';
 import type { PermissionManager } from '../permissions.js';
 
 export function createSendFileTool(
   permissions: PermissionManager,
+  getCwd: () => string,
   sendFile: (filePath: string) => Promise<void>,
 ) {
   return tool({
@@ -15,7 +16,7 @@ export function createSendFileTool(
       path: z.string().describe('Absolute or relative path to the file to send'),
     }),
     execute: async ({ path }) => {
-      const resolved = resolve(path);
+      const resolved = isAbsolute(path) ? resolve(path) : resolve(getCwd(), path);
       const check = await permissions.checkFsAccess(resolved, 'read');
       if (!check.allowed) {
         const parentDir = resolve(resolved, '..');

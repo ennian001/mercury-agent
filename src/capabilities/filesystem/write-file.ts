@@ -1,11 +1,11 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, writeFileSync, readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, isAbsolute } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import type { PermissionManager } from '../permissions.js';
 
-export function createWriteFileTool(permissions: PermissionManager) {
+export function createWriteFileTool(permissions: PermissionManager, getCwd: () => string) {
   return tool({
     description: 'Write content to an existing file. The path must be within a writable scope.',
     parameters: z.object({
@@ -13,7 +13,7 @@ export function createWriteFileTool(permissions: PermissionManager) {
       content: z.string().describe('The content to write to the file'),
     }),
     execute: async ({ path, content }) => {
-      const resolved = resolve(path);
+      const resolved = isAbsolute(path) ? resolve(path) : resolve(getCwd(), path);
       const check = await permissions.checkFsAccess(resolved, 'write');
       if (!check.allowed) {
         const parentDir = resolve(resolved, '..');

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { execSync } from 'node:child_process';
 import type { PermissionManager } from '../permissions.js';
 
-export function createGitPushTool(permissions: PermissionManager) {
+export function createGitPushTool(permissions: PermissionManager, getCwd: () => string) {
   return tool({
     description: 'Push commits to a remote repository. This modifies a remote and requires approval.',
     parameters: z.object({
@@ -23,7 +23,7 @@ export function createGitPushTool(permissions: PermissionManager) {
       }
 
       try {
-        const result = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+        const result = execSync(cmd, { encoding: 'utf-8', timeout: 30000, cwd: getCwd() });
         return result.trim() || 'Pushed successfully.';
       } catch (err: any) {
         return `Error: ${err.stderr?.trim() || err.message}`;

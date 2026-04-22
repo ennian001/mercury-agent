@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { execSync } from 'node:child_process';
 
-export function createGitStatusTool() {
+export function createGitStatusTool(getCwd: () => string) {
   return tool({
     description: 'Show the working tree status. Returns staged, unstaged, and untracked files.',
     parameters: z.object({
@@ -11,7 +11,7 @@ export function createGitStatusTool() {
     execute: async ({ path }) => {
       try {
         const cmd = path ? `git -C "${path}" status --porcelain` : 'git status --porcelain';
-        const result = execSync(cmd, { encoding: 'utf-8', timeout: 10000 });
+        const result = execSync(cmd, { encoding: 'utf-8', timeout: 10000, cwd: getCwd() });
         if (!result.trim()) return 'Working tree clean — no changes.';
         return result.trim();
       } catch (err: any) {

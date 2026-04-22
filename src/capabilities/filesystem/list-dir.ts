@@ -1,17 +1,17 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import type { PermissionManager } from '../permissions.js';
 
-export function createListDirTool(permissions: PermissionManager) {
+export function createListDirTool(permissions: PermissionManager, getCwd: () => string) {
   return tool({
     description: 'List the contents of a directory. Shows file names, types, and sizes.',
     parameters: z.object({
       path: z.string().describe('Absolute or relative path to the directory'),
     }),
     execute: async ({ path }) => {
-      const resolved = resolve(path);
+      const resolved = isAbsolute(path) ? resolve(path) : resolve(getCwd(), path);
       const check = await permissions.checkFsAccess(resolved, 'read');
       if (!check.allowed) {
         return `Error: Permission denied for read access to ${resolved}. Use the approve_scope tool with path="${resolved}" and mode="read" to request access from the user.`;

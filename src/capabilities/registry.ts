@@ -10,6 +10,7 @@ import { createSendFileTool } from './filesystem/send-file.js';
 import { createSendMessageTool } from './messaging/send-message.js';
 import { createApproveScopeTool } from './filesystem/approve-scope.js';
 import { createRunCommandTool } from './shell/run-command.js';
+import { createCdTool } from './shell/cd.js';
 import { createApproveCommandTool } from './shell/approve-command.js';
 import { createInstallSkillTool } from './skills/install-skill.js';
 import { createListSkillsTool } from './skills/list-skills.js';
@@ -55,6 +56,7 @@ export class CapabilityRegistry {
   private currentChannelId = 'cli';
   private currentChannelType = 'cli';
   private chatCommandContext?: ChatCommandContext;
+  private currentCwd = process.cwd();
 
   constructor(skillLoader?: SkillLoader, scheduler?: Scheduler, tokenBudget?: TokenBudget) {
     this.permissions = new PermissionManager();
@@ -80,6 +82,14 @@ export class CapabilityRegistry {
     return { channelId: this.currentChannelId, channelType: this.currentChannelType };
   }
 
+  getCwd(): string {
+    return this.currentCwd;
+  }
+
+  setCwd(dir: string): void {
+    this.currentCwd = dir;
+  }
+
   setSendFileHandler(handler: (filePath: string) => Promise<void>): void {
     this.sendFileHandler = handler;
   }
@@ -92,18 +102,18 @@ export class CapabilityRegistry {
     const manifest = this.permissions.getManifest();
 
     if (manifest.capabilities.filesystem.enabled) {
-      this.tools.read_file = createReadFileTool(this.permissions);
-      this.tools.write_file = createWriteFileTool(this.permissions);
-      this.tools.create_file = createCreateFileTool(this.permissions);
-      this.tools.list_dir = createListDirTool(this.permissions);
-      this.tools.delete_file = createDeleteFileTool(this.permissions);
-      this.tools.edit_file = createEditFileTool(this.permissions);
+      this.tools.read_file = createReadFileTool(this.permissions, () => this.getCwd());
+      this.tools.write_file = createWriteFileTool(this.permissions, () => this.getCwd());
+      this.tools.create_file = createCreateFileTool(this.permissions, () => this.getCwd());
+      this.tools.list_dir = createListDirTool(this.permissions, () => this.getCwd());
+      this.tools.delete_file = createDeleteFileTool(this.permissions, () => this.getCwd());
+      this.tools.edit_file = createEditFileTool(this.permissions, () => this.getCwd());
 
       if (this.sendFileHandler) {
-        this.tools.send_file = createSendFileTool(this.permissions, this.sendFileHandler);
+        this.tools.send_file = createSendFileTool(this.permissions, () => this.getCwd(), this.sendFileHandler);
       }
 
-      this.tools.approve_scope = createApproveScopeTool(this.permissions);
+      this.tools.approve_scope = createApproveScopeTool(this.permissions, () => this.getCwd());
 
       logger.info('Filesystem tools registered');
     }
@@ -114,7 +124,8 @@ export class CapabilityRegistry {
     }
 
     if (manifest.capabilities.shell.enabled) {
-      this.tools.run_command = createRunCommandTool(this.permissions);
+      this.tools.run_command = createRunCommandTool(this.permissions, () => this.getCwd(), (dir: string) => this.setCwd(dir));
+      this.tools.cd = createCdTool(() => this.getCwd(), (dir: string) => this.setCwd(dir));
       this.tools.approve_command = createApproveCommandTool(this.permissions);
       logger.info('Shell tools registered');
     }
@@ -139,12 +150,12 @@ export class CapabilityRegistry {
     }
 
     if (manifest.capabilities.git?.enabled) {
-      this.tools.git_status = createGitStatusTool();
-      this.tools.git_diff = createGitDiffTool();
-      this.tools.git_log = createGitLogTool();
-      this.tools.git_add = createGitAddTool();
-      this.tools.git_commit = createGitCommitTool();
-      this.tools.git_push = createGitPushTool(this.permissions);
+      this.tools.git_status = createGitStatusTool(() => this.getCwd());
+      this.tools.git_diff = createGitDiffTool(() => this.getCwd());
+      this.tools.git_log = createGitLogTool(() => this.getCwd());
+      this.tools.git_add = createGitAddTool(() => this.getCwd());
+      this.tools.git_commit = createGitCommitTool(() => this.getCwd());
+      this.tools.git_push = createGitPushTool(this.permissions, () => this.getCwd());
       logger.info('Git tools registered');
     }
 

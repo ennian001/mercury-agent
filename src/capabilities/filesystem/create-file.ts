@@ -1,10 +1,10 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, isAbsolute } from 'node:path';
 import type { PermissionManager } from '../permissions.js';
 
-export function createCreateFileTool(permissions: PermissionManager) {
+export function createCreateFileTool(permissions: PermissionManager, getCwd: () => string) {
   return tool({
     description: 'Create a new file with the given content. Also creates parent directories if needed. The path must be within a writable scope.',
     parameters: z.object({
@@ -12,7 +12,7 @@ export function createCreateFileTool(permissions: PermissionManager) {
       content: z.string().describe('The content of the new file'),
     }),
     execute: async ({ path, content }) => {
-      const resolved = resolve(path);
+      const resolved = isAbsolute(path) ? resolve(path) : resolve(getCwd(), path);
       const check = await permissions.checkFsAccess(resolved, 'write');
       if (!check.allowed) {
         const parentDir = resolve(resolved, '..');

@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { execSync } from 'node:child_process';
 
-export function createGitLogTool() {
+export function createGitLogTool(getCwd: () => string) {
   return tool({
     description: 'Show commit logs. Returns recent commit history with hash, author, date, and message.',
     parameters: z.object({
@@ -14,7 +14,7 @@ export function createGitLogTool() {
         const n = count ?? 10;
         let cmd = `git log --oneline --decorate -${n}`;
         if (path) cmd += ` -- "${path}"`;
-        const result = execSync(cmd, { encoding: 'utf-8', timeout: 10000 });
+        const result = execSync(cmd, { encoding: 'utf-8', timeout: 10000, cwd: getCwd() });
         if (!result.trim()) return 'No commits found.';
         return result.trim();
       } catch (err: any) {

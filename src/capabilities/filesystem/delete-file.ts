@@ -1,17 +1,17 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, unlinkSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import type { PermissionManager } from '../permissions.js';
 
-export function createDeleteFileTool(permissions: PermissionManager) {
+export function createDeleteFileTool(permissions: PermissionManager, getCwd: () => string) {
   return tool({
     description: 'Delete a file. This action cannot be undone. The path must be within a writable scope. Always asks for confirmation.',
     parameters: z.object({
       path: z.string().describe('Absolute or relative path to the file to delete'),
     }),
     execute: async ({ path }) => {
-      const resolved = resolve(path);
+      const resolved = isAbsolute(path) ? resolve(path) : resolve(getCwd(), path);
       const check = await permissions.checkFsAccess(resolved, 'write');
       if (!check.allowed) {
         const parentDir = resolve(resolved, '..');

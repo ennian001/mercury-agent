@@ -1,16 +1,17 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { execSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { PermissionManager } from '../permissions.js';
 import { logger } from '../../utils/logger.js';
 
-export function createRunCommandTool(permissions: PermissionManager) {
+export function createRunCommandTool(permissions: PermissionManager, getCwd: () => string, setCwd: (dir: string) => void) {
   return tool({
-    description: `Run a shell command. Commands run in the current working directory unless an absolute path is given.
+    description: `Run a shell command in the current working directory. Use the cd tool to change directories first — cd commands within this tool only affect chained commands (e.g., "cd /path && ls"), not subsequent calls.
 Blocked commands (sudo, rm -rf /, etc.) are never executed.
 Auto-approved commands (ls, cat, git status, curl, etc.) run without asking.
-Other commands require user approval — tell the user what command you want to run and ask for confirmation. If they say "yes", try again. If they say "always", use the approve_command tool.`,
+Other commands require user approval.`,
     parameters: z.object({
       command: z.string().describe('The shell command to execute'),
     }),
@@ -25,20 +26,31 @@ Other commands require user approval — tell the user what command you want to 
         return `Error: ${check.reason}`;
       }
 
+      const cwd = getCwd();
+
       try {
-        logger.info({ cmd: command }, 'Executing shell command');
+        logger.info({ cmd: command, cwd }, 'Executing shell command');
         const result = execSync(command, {
-          cwd: process.cwd(),
+          cwd,
           timeout: 30000,
           maxBuffer: 1024 * 1024,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
-        const output = result?.trim() || '(no output)';
-        return output;
+
+        const trimmedOutput = result?.trim() || '(no output)';
+
+        detectCd(command, cwd, setCwd);
+
+        return trimmedOutput;
       } catch (err: any) {
         const stderr = err.stderr?.trim();
         const stdout = err.stdout?.trim();
+
+        if (stdout || stderr) {
+          detectCd(command, cwd, setCwd);
+        }
+
         let msg = `Command exited with code ${err.status || 'unknown'}`;
         if (stdout) msg += `\nOutput: ${stdout}`;
         if (stderr) msg += `\nError: ${stderr}`;
@@ -46,4 +58,27 @@ Other commands require user approval — tell the user what command you want to 
       }
     },
   });
+}
+
+function detectCd(command: string, currentCwd: string, setCwd: (dir: string) => void): void {
+  const trimmed = command.trim();
+
+  const cdOnly = trimmed.match(/^cd\s+(.+)$/);
+  if (cdOnly) {
+    const target = cdOnly[1].replace(/^["']|["']$/g, '').replace(/~/, process.env.HOME || '');
+    const resolved = isAbsolute(target) ? target : resolve(currentCwd, target);
+    if (existsSync(resolved)) {
+      setCwd(resolved);
+    }
+    return;
+  }
+
+  const cdChain = trimmed.match(/cd\s+(.+?)\s*&&/);
+  if (cdChain) {
+    const target = cdChain[1].replace(/^["']|["']$/g, '').replace(/~/, process.env.HOME || '');
+    const resolved = isAbsolute(target) ? target : resolve(currentCwd, target);
+    if (existsSync(resolved)) {
+      setCwd(resolved);
+    }
+  }
 }
