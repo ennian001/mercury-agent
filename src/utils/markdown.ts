@@ -3,9 +3,36 @@ import chalk from 'chalk';
 
 const lexer = new Marked();
 
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&#x27;': "'",
+  '&apos;': "'",
+  '&nbsp;': ' ',
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match) => {
+    if (HTML_ENTITIES[match]) return HTML_ENTITIES[match];
+    if (match.startsWith('&#x') || match.startsWith('&#X')) {
+      const code = parseInt(match.slice(3, -1), 16);
+      return isNaN(code) ? match : String.fromCodePoint(code);
+    }
+    if (match.startsWith('&#')) {
+      const code = parseInt(match.slice(2, -1), 10);
+      return isNaN(code) ? match : String.fromCodePoint(code);
+    }
+    return match;
+  });
+}
+
 export function renderMarkdown(text: string): string {
   try {
-    const tokens = lexer.lexer(text);
+    const decoded = decodeHtmlEntities(text);
+    const tokens = lexer.lexer(decoded);
     const result = renderTokens(tokens);
     return result.replace(/\n{3,}/g, '\n\n').trimEnd();
   } catch {

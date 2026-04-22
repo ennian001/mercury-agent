@@ -946,6 +946,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
     console.log(chalk.green(`  ${name} is live. Type a message and press Enter.`));
     console.log(chalk.dim('  Ctrl+C to exit · /help for commands'));
     console.log('');
+    cliChannel?.showPrompt();
   } else {
     logger.info({ channels: activeCh, tools: toolNames }, 'Mercury is live (daemon mode)');
   }
