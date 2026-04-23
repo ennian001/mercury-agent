@@ -65,3 +65,64 @@ export function formatToolStep(toolName: string, args: Record<string, any>): str
 
   return detail ? `${config.icon} ${config.label} ${detail}` : `${config.icon} ${config.label}`;
 }
+
+export function formatToolResult(toolName: string, result: unknown): string {
+  if (result == null) return '';
+  const str = typeof result === 'string' ? result : JSON.stringify(result);
+  if (!str) return '';
+
+  if (str.startsWith('Error') || str.startsWith('⚠')) {
+    const first = str.split('\n')[0];
+    return first.length > 80 ? first.slice(0, 77) + '…' : first;
+  }
+
+  const RESULT_HINTS: Record<string, (s: string) => string> = {
+    read_file: (s) => `${s.split('\n').length} lines`,
+    write_file: (s) => s.startsWith('Success') ? 'saved' : trimFirst(s),
+    create_file: (s) => s.startsWith('Success') ? 'created' : trimFirst(s),
+    edit_file: (s) => s.startsWith('Success') ? 'edited' : trimFirst(s),
+    delete_file: (s) => s.startsWith('Success') ? 'deleted' : trimFirst(s),
+    list_dir: (s) => {
+      const entries = s.split('\n').filter(Boolean).length;
+      return `${entries} entries`;
+    },
+    run_command: (s) => {
+      if (s.includes('exited with code')) return s.split('\n')[0];
+      const lines = s.split('\n').filter(Boolean).length;
+      return lines <= 1 ? trimFirst(s) : `${lines} lines output`;
+    },
+    fetch_url: () => 'fetched',
+    git_status: (s) => `${s.split('\n').filter(Boolean).length} lines`,
+    git_diff: (s) => `${s.split('\n').filter(Boolean).length} lines`,
+    git_log: (s) => `${s.split('\n').filter(Boolean).length} commits`,
+    git_add: () => 'staged',
+    git_commit: () => 'committed',
+    git_push: () => 'pushed',
+    create_pr: (s) => s.includes('created') ? 'created' : trimFirst(s),
+    review_pr: (s) => `${s.split('\n').filter(Boolean).length} lines`,
+    list_issues: (s) => `${s.split('\n').filter(Boolean).length} issues`,
+    create_issue: (s) => s.includes('created') ? 'created' : trimFirst(s),
+    github_api: (s) => `${s.split('\n').filter(Boolean).length} lines`,
+    send_message: () => 'sent',
+    send_file: () => 'sent',
+    use_skill: (s) => trimFirst(s),
+    schedule_task: (s) => trimFirst(s),
+    cancel_task: () => 'cancelled',
+    list_tasks: (s) => `${s.split('\n').filter(Boolean).length} tasks`,
+    budget_status: () => 'reported',
+    approve_scope: () => 'approved',
+    approve_command: () => 'approved',
+    cd: () => 'changed',
+    list_skills: (s) => `${s.split('\n').filter(Boolean).length} skills`,
+    install_skill: (s) => trimFirst(s),
+  };
+
+  const hint = RESULT_HINTS[toolName];
+  if (hint) return hint(str);
+  return trimFirst(str);
+}
+
+function trimFirst(s: string): string {
+  const first = s.split('\n')[0];
+  return first.length > 80 ? first.slice(0, 77) + '…' : first;
+}

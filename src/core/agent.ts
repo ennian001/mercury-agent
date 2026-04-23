@@ -347,7 +347,7 @@ export class Agent {
               tools: this.capabilities.getTools(),
               maxSteps: MAX_STEPS,
               abortSignal: loopAbortController.signal,
-              onStepFinish: async ({ toolCalls }) => {
+              onStepFinish: async ({ toolCalls, toolResults }) => {
                 if (toolCalls && toolCalls.length > 0) {
                   const names = toolCalls.map((tc: any) => tc.toolName).join(', ');
                   logger.info({ tools: names }, 'Tool call step');
@@ -384,6 +384,15 @@ export class Agent {
                     if (channel instanceof CLIChannel) {
                       for (const tc of toolCalls) {
                         await (channel as CLIChannel).sendToolFeedback(tc.toolName, tc.args as Record<string, any>).catch(() => {});
+                      }
+                      if (toolResults) {
+                        for (let i = 0; i < toolResults.length; i++) {
+                          const tr = toolResults[i] as any;
+                          const tcName = toolCalls[i]?.toolName as string | undefined;
+                          if (tcName) {
+                            (channel as CLIChannel).sendStepDone(tcName, tr.result ?? tr);
+                          }
+                        }
                       }
                     } else {
                       await channel.send(`  [Using: ${names}]`, msg.channelId).catch(() => {});
@@ -427,7 +436,7 @@ export class Agent {
               tools: this.capabilities.getTools(),
               maxSteps: MAX_STEPS,
               abortSignal: loopAbortController.signal,
-              onStepFinish: async ({ toolCalls, text }) => {
+              onStepFinish: async ({ toolCalls, toolResults }) => {
                 if (toolCalls && toolCalls.length > 0) {
                   const names = toolCalls.map((tc: any) => tc.toolName).join(', ');
                   logger.info({ tools: names }, 'Tool call step');
@@ -464,6 +473,15 @@ export class Agent {
                     if (channel instanceof CLIChannel) {
                       for (const tc of toolCalls) {
                         await (channel as CLIChannel).sendToolFeedback(tc.toolName, tc.args as Record<string, any>).catch(() => {});
+                      }
+                      if (toolResults) {
+                        for (let i = 0; i < toolResults.length; i++) {
+                          const tr = toolResults[i] as any;
+                          const tcName = toolCalls[i]?.toolName as string | undefined;
+                          if (tcName) {
+                            (channel as CLIChannel).sendStepDone(tcName, tr.result ?? tr);
+                          }
+                        }
                       }
                     } else {
                       await channel.send(`  [Using: ${names}]`, msg.channelId).catch(() => {});

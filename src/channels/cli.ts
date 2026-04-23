@@ -6,7 +6,7 @@ import type { ChannelMessage } from '../types/channel.js';
 import { BaseChannel } from './base.js';
 import { logger } from '../utils/logger.js';
 import { renderMarkdown } from '../utils/markdown.js';
-import { formatToolStep } from '../utils/tool-label.js';
+import { formatToolStep, formatToolResult } from '../utils/tool-label.js';
 import {
   ArrowSelectCancelledError,
   selectWithArrowKeys,
@@ -14,6 +14,7 @@ import {
 } from '../utils/arrow-select.js';
 
 const USER_PROMPT = '  You: ';
+const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
 
 function agentName(name: string, suffix?: string): string {
   return chalk.cyan(`  ${name}:`) + (suffix ?? '');
@@ -27,7 +28,12 @@ export class CLIChannel extends BaseChannel {
   private menuAbortController: AbortController | null = null;
   private outputInProgress = 0;
   private streamActive = false;
-  private streamLines = 0;
+  private turnHeaderPrinted = false;
+  private stepCount = 0;
+  private stepStartTime = 0;
+  private spinnerFrame = 0;
+  private spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  private spinnerLine = '';
 
   constructor(agentName: string = 'Mercury') {
     super();
@@ -79,6 +85,7 @@ export class CLIChannel extends BaseChannel {
   async send(content: string, _targetId?: string, elapsedMs?: number): Promise<void> {
     this.closeActiveMenu();
     this.beginOutput();
+    this.turnHeaderPrinted = false;
     const timeStr = elapsedMs != null ? chalk.dim(` (${(elapsedMs / 1000).toFixed(1)}s)`) : '';
 
     const block = this.formatBlock(this.agentName, timeStr, content);
@@ -117,20 +124,63 @@ export class CLIChannel extends BaseChannel {
   }
 
   async sendToolFeedback(toolName: string, args: Record<string, any>): Promise<void> {
+    this.stopSpinner();
+    if (!this.turnHeaderPrinted) {
+      this.turnHeaderPrinted = true;
+      console.log('');
+      console.log(agentName(this.agentName, ''));
+      console.log('');
+    }
+    this.stepCount += 1;
+    this.stepStartTime = Date.now();
+
     const label = formatToolStep(toolName, args);
-    if (this.streamActive) {
-      this.streamLines += 2;
-      process.stdout.write(chalk.dim(`\n  ${label}\n`));
+    const stepPrefix = chalk.dim(`  ${this.stepCount}.`);
+
+    console.log(`${stepPrefix} ${chalk.dim(label)}`);
+    this.startSpinner();
+  }
+
+  sendStepDone(toolName: string, result: unknown): void {
+    this.stopSpinner();
+    const elapsed = ((Date.now() - this.stepStartTime) / 1000).toFixed(1);
+    const summary = formatToolResult(toolName, result);
+    if (summary) {
+      console.log(chalk.dim(`     ${summary} (${elapsed}s)`));
     } else {
-      console.log(chalk.dim(`  ${label}`));
+      process.stdout.write(chalk.dim(`     ${elapsed}s\n`));
+    }
+  }
+
+  private startSpinner(): void {
+    if (!process.stdout.isTTY) return;
+    this.spinnerFrame = 0;
+    this.spinnerLine = '';
+    this.spinnerTimer = setInterval(() => {
+      const frame = SPINNER_FRAMES[this.spinnerFrame % SPINNER_FRAMES.length];
+      const elapsed = ((Date.now() - this.stepStartTime) / 1000).toFixed(0);
+      this.spinnerLine = chalk.dim(`     ${frame} Step ${this.stepCount} · ${elapsed}s`);
+      process.stdout.write(`\x1b[2K\r${this.spinnerLine}`);
+      this.spinnerFrame++;
+    }, 80);
+  }
+
+  private stopSpinner(): void {
+    if (this.spinnerTimer) {
+      clearInterval(this.spinnerTimer);
+      this.spinnerTimer = null;
+    }
+    if (this.spinnerLine) {
+      process.stdout.write('\x1b[2K\r');
+      this.spinnerLine = '';
     }
   }
 
   async stream(content: AsyncIterable<string>, _targetId?: string): Promise<string> {
     this.closeActiveMenu();
     this.beginOutput();
-    this.streamActive = true;
-    this.streamLines = 0;
+    this.stepCount = 0;
+    this.turnHeaderPrinted = false;
 
     if (!process.stdout.isTTY) {
       process.stdout.write(chalk.cyan(`  ${this.agentName}: `));
@@ -139,18 +189,24 @@ export class CLIChannel extends BaseChannel {
         process.stdout.write(chunk);
         full += chunk;
       }
-      this.streamActive = false;
       console.log('\n');
       this.endOutput();
       return full;
     }
 
+    this.streamActive = true;
     let full = '';
     for await (const chunk of content) {
+      this.stopSpinner();
+      if (!this.turnHeaderPrinted) {
+        this.turnHeaderPrinted = true;
+        console.log('');
+        console.log(agentName(this.agentName, ''));
+        console.log('');
+      }
       process.stdout.write(chunk);
       full += chunk;
     }
-
     this.streamActive = false;
 
     if (!full.trim()) {
@@ -159,37 +215,18 @@ export class CLIChannel extends BaseChannel {
       return full;
     }
 
-    const termWidth = process.stdout.columns || 80;
-
-    // count how many screen lines the raw text occupied
-    let streamedScreenLines = 0;
-    for (const line of full.split('\n')) {
-      const visualLen = line.replace(/\x1b\[[0-9;]*m/g, '').length;
-      streamedScreenLines += Math.max(1, Math.ceil(visualLen / termWidth));
-    }
-
-    // +1 trailing newline after the streamed text
-    const totalRawLines = streamedScreenLines + this.streamLines + 1;
-
-    // move up and erase every line we wrote
-    process.stdout.write(`\x1b[${totalRawLines}A`);
-    for (let i = 0; i < totalRawLines; i++) {
-      process.stdout.write('\x1b[2K\x1b[1B');
-    }
-    process.stdout.write(`\x1b[${totalRawLines}A`);
-
-    // print the formatted block
-    const block = this.formatBlock(this.agentName, '', full);
-    for (const line of block) {
-      console.log(line);
-    }
+    console.log('');
+    console.log('');
 
     this.endOutput();
     return full;
   }
 
   async typing(_targetId?: string): Promise<void> {
-    process.stdout.write(chalk.dim(`  ${this.agentName} is responding...\r`));
+    this.stopSpinner();
+    if (process.stdout.isTTY) {
+      process.stdout.write(chalk.dim(`  ${this.agentName} is thinking...\r`));
+    }
   }
 
   showPrompt(): void {
