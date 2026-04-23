@@ -84,8 +84,5 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "overrides": {
-    "better-sqlite3": "^12.9.0"
   }
 }
