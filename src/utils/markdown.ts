@@ -31,12 +31,11 @@ function decodeHtmlEntities(text: string): string {
 
 export function renderMarkdown(text: string): string {
   try {
-    const decoded = decodeHtmlEntities(text);
-    const tokens = lexer.lexer(decoded);
+    const tokens = lexer.lexer(text);
     const result = renderTokens(tokens);
-    return result.replace(/\n{3,}/g, '\n\n').trimEnd();
+    return decodeHtmlEntities(result.replace(/\n{3,}/g, '\n\n').trimEnd());
   } catch {
-    return text;
+    return decodeHtmlEntities(text);
   }
 }
 
