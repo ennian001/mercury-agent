@@ -61,64 +61,9 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Pack tarball
-        run: npm pack
-
-      - name: Verify tarball contents
+      - name: Verify package integrity
         shell: bash
-        run: |
-          TARBALL=$(ls *.tgz | head -1)
-          echo "Tarball: $TARBALL"
-          mkdir -p /tmp/verify-pkg
-          tar -xzf "$TARBALL" -C /tmp/verify-pkg
-          echo "--- Tarball contents ---"
-          find /tmp/verify-pkg -type f | head -20
-
-      - name: Install from tarball (production only)
-        shell: bash
-        run: |
-          TARBALL=$(ls *.tgz | head -1)
-          mkdir -p /tmp/verify-install
-          cp "$TARBALL" /tmp/verify-install/
-          cd /tmp/verify-install
-          npm init -y
-          npm install "$TARBALL" --omit=dev --no-save
-
-      - name: Verify CLI entry point exists and runs
-        shell: bash
-        run: |
-          cd /tmp/verify-install
-          ENTRY=$(node -e "const p=require('./node_modules/@cosmicstack/mercury-agent/package.json'); console.log(p.main)")
-          echo "Entry point: $ENTRY"
-          test -f "node_modules/@cosmicstack/mercury-agent/$ENTRY" || { echo "FAIL: entry point missing"; exit 1; }
-          head -1 "node_modules/@cosmicstack/mercury-agent/$ENTRY" | grep -q "node" || { echo "FAIL: shebang missing"; exit 1; }
-          echo "OK: Entry point exists with shebang"
-
-      - name: Verify package.json has no file references that won't exist
-        shell: bash
-        run: |
-          cd /tmp/verify-install/node_modules/@cosmicstack/mercury-agent
-          PKG=$(cat package.json)
-          SCRIPTS=$(echo "$PKG" | node -e "const p=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); const s=p.scripts||{}; Object.entries(s).forEach(([k,v])=>{if(v.includes('scripts/')||v.includes('bash '))console.log('WARN: script '+k+' references: '+v)})")
-          if [ -n "$SCRIPTS" ]; then
-            echo "$SCRIPTS"
-            echo "FAIL: scripts reference files not included in package"
-            exit 1
-          fi
-          echo "OK: No dangling script references"
-
-      - name: Verify better-sqlite3 optional handling
-        shell: bash
-        run: |
-          cd /tmp/verify-install/node_modules/@cosmicstack/mercury-agent
-          node -e "
-            const {createRequire} = require('node:module');
-            const req = createRequire(require('url').pathToFileURL(require('path').resolve('package.json')));
-            let ok = false;
-            try { req('better-sqlite3'); ok = true; } catch { ok = false; }
-            console.log('better-sqlite3 available:', ok);
-            if (!ok) console.log('OK: better-sqlite3 gracefully unavailable (optional)');
-          " || echo "OK: better-sqlite3 probe handled"
+        run: node scripts/verify-package.cjs
 
   publish:
     name: Publish to npm

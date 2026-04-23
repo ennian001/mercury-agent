@@ -5,7 +5,8 @@ const { join, resolve } = require('path');
 const { tmpdir } = require('os');
 
 const ROOT = resolve(__dirname, '..');
-const TMP = join(tmpdir(), `mercury-pack-verify-${process.pid}`);
+const TMP = join(tmpdir(), `mercury-pv-${process.pid}`);
+const IS_WIN = process.platform === 'win32';
 
 let failed = false;
 
@@ -27,13 +28,18 @@ console.log('\n2/5 Packing tarball...');
 if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
 
-const tarball = execSync('npm pack 2>/dev/null', { cwd: ROOT, encoding: 'utf-8' }).trim();
+const tarball = execSync('npm pack 2>/dev/null', { cwd: ROOT, encoding: 'utf-8' }).trim().split('\n').pop();
 const tarballPath = join(ROOT, tarball);
 console.log(`  Tarball: ${tarball}`);
 
 console.log('\n3/5 Extracting & installing...');
-execSync(`tar -xzf "${tarballPath}" -C "${TMP}"`, { stdio: 'pipe' });
-const pkgDir = join(TMP, 'package');
+mkdirSync(join(TMP, 'pack'), { recursive: true });
+if (IS_WIN) {
+  execSync(`tar -xzf "${tarballPath}" -C "${join(TMP, 'pack')}"`, { stdio: 'pipe' });
+} else {
+  execSync(`tar -xzf "${tarballPath}" -C "${join(TMP, 'pack')}"`, { stdio: 'pipe' });
+}
+const pkgDir = join(TMP, 'pack', 'package');
 
 const installDir = join(TMP, 'install');
 mkdirSync(installDir, { recursive: true });
