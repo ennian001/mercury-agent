@@ -16,6 +16,14 @@ export const BLOCKED_COMMANDS = [
   'kill -9 1',
   '> /dev/sda',
   'mv /* /dev/null',
+  'del /s /q C:\\*',
+  'rmdir /s /q C:\\*',
+  'format *',
+  'icacls * C:\\* /grant',
+  'net user *',
+  'netsh *',
+  'reg delete *',
+  'cmd /c rd /s /q *',
 ];
 
 export const AUTO_APPROVED_COMMANDS = [
@@ -42,6 +50,14 @@ export const AUTO_APPROVED_COMMANDS = [
   'df *',
   'du *',
   'uname *',
+  'dir *',
+  'type *',
+  'cd *',
+  'where *',
+  'tree *',
+  'findstr *',
+  'tasklist *',
+  'systeminfo *',
 ];
 
 export const NEEDS_APPROVAL_COMMANDS = [
@@ -60,4 +76,10 @@ export const NEEDS_APPROVAL_COMMANDS = [
   'chmod *',
   'mkdir *',
   'rmdir *',
+  'xcopy *',
+  'robocopy *',
+  'del *',
+  'rd /s *',
+  'powershell *',
+  'cmd /c *',
 ];

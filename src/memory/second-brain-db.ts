@@ -1,7 +1,36 @@
-import Database from 'better-sqlite3';
-import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createRequire } from 'node:module';
 import { logger } from '../utils/logger.js';
+
+type BetterSqlite3Database = import('better-sqlite3').Database;
+
+const require = createRequire(import.meta.url);
+
+let syncDatabaseClass: typeof import('better-sqlite3') | null = null;
+let availabilityChecked = false;
+let available = false;
+
+try {
+  const mod = require('better-sqlite3');
+  const probeDir = join(tmpdir(), `mercury-sqlite3-probe-${process.pid}`);
+  try {
+    mkdirSync(probeDir, { recursive: true });
+    const probeDb = new mod(join(probeDir, 'probe.db'));
+    probeDb.close();
+    rmSync(probeDir, { recursive: true, force: true });
+    syncDatabaseClass = mod;
+  } catch {
+    syncDatabaseClass = null;
+  }
+} catch {
+  syncDatabaseClass = null;
+}
+
+export function isBetterSqlite3Available(): boolean {
+  return syncDatabaseClass !== null;
+}
 
 export interface MemoryRow {
   id: string;
@@ -27,14 +56,21 @@ export interface MemoryRow {
 }
 
 export class SecondBrainDB {
-  private db: Database.Database;
+  private db: BetterSqlite3Database;
 
   constructor(dbPath: string) {
+    if (!syncDatabaseClass) {
+      throw new Error(
+        'better-sqlite3 is not available — second brain memory requires it. ' +
+        'Install build tools (make, gcc/g++, python3) or upgrade to Node >= 20. ' +
+        'See: https://github.com/WiseLibs/better-sqlite3/blob/master/docs/compilation.md'
+      );
+    }
     const dir = dirname(dbPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    this.db = new Database(dbPath);
+    this.db = new syncDatabaseClass(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
   }

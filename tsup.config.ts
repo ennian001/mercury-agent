@@ -14,5 +14,6 @@ export default defineConfig({
     "react",
     "ink",
     "grammy",
+    "better-sqlite3",
   ],
 });

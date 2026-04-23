@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getDefaultConfig } from '../utils/config.js';
 import { UserMemoryStore } from './user-memory.js';
+import { isBetterSqlite3Available } from './second-brain-db.js';
 
 const tempDirs: string[] = [];
+
+const sqliteAvailable = isBetterSqlite3Available();
 
 function createStore(): UserMemoryStore {
   const dir = mkdtempSync(join(tmpdir(), 'mercury-sb-'));
@@ -27,7 +30,7 @@ afterEach(() => {
 });
 
 describe('UserMemoryStore', () => {
-  it('merges similar durable memories instead of duplicating them', () => {
+  it.skipIf(!sqliteAvailable)('merges similar durable memories instead of duplicating them', () => {
     const store = createStore();
 
     store.remember([
@@ -44,7 +47,7 @@ describe('UserMemoryStore', () => {
     expect(recent[0].summary).toContain('concise');
   });
 
-  it('retrieves only relevant records for a query', () => {
+  it.skipIf(!sqliteAvailable)('retrieves only relevant records for a query', () => {
     const store = createStore();
 
     store.remember([
@@ -62,7 +65,7 @@ describe('UserMemoryStore', () => {
     expect(result.context).toContain('Mercury');
   });
 
-  it('auto-resolves conflicts by dismissing the lower-confidence memory', () => {
+  it.skipIf(!sqliteAvailable)('auto-resolves conflicts by dismissing the lower-confidence memory', () => {
     const store = createStore();
 
     store.remember([
@@ -80,7 +83,7 @@ describe('UserMemoryStore', () => {
     expect(active[0].summary).not.toContain('does not');
   });
 
-  it('auto-resolves conflicts when incoming has higher confidence', () => {
+  it.skipIf(!sqliteAvailable)('auto-resolves conflicts when incoming has higher confidence', () => {
     const store = createStore();
 
     store.remember([
@@ -97,7 +100,7 @@ describe('UserMemoryStore', () => {
     expect(active[0].summary).toContain('does not prefer verbose');
   });
 
-  it('synthesizes a compact profile and reflection records from repeated signal', () => {
+  it.skipIf(!sqliteAvailable)('synthesizes a compact profile and reflection records from repeated signal', () => {
     const store = createStore();
 
     store.remember([
@@ -124,7 +127,7 @@ describe('UserMemoryStore', () => {
     expect(reflections.length).toBeGreaterThan(0);
   });
 
-  it('separates active state from durable profile', () => {
+  it.skipIf(!sqliteAvailable)('separates active state from durable profile', () => {
     const store = createStore();
 
     store.remember([
@@ -148,7 +151,7 @@ describe('UserMemoryStore', () => {
     expect(summary.profileSummary).toContain('second brain');
   });
 
-  it('supports pause and resume of learning', () => {
+  it.skipIf(!sqliteAvailable)('supports pause and resume of learning', () => {
     const store = createStore();
 
     expect(store.isLearningPaused()).toBe(false);
@@ -168,7 +171,7 @@ describe('UserMemoryStore', () => {
     expect(store.getSummary().total).toBe(1);
   });
 
-  it('clears all memories', () => {
+  it.skipIf(!sqliteAvailable)('clears all memories', () => {
     const store = createStore();
 
     store.remember([
@@ -185,7 +188,7 @@ describe('UserMemoryStore', () => {
     expect(store.getSummary().total).toBe(0);
   });
 
-  it('full-text search finds relevant memories', () => {
+  it.skipIf(!sqliteAvailable)('full-text search finds relevant memories', () => {
     const store = createStore();
 
     store.remember([
@@ -200,7 +203,7 @@ describe('UserMemoryStore', () => {
     expect(results[0].summary).toContain('knowledge management');
   });
 
-  it('deprioritizes stale inferred memories in retrieval', () => {
+  it.skipIf(!sqliteAvailable)('deprioritizes stale inferred memories in retrieval', () => {
     const store = createStore();
 
     const [inferred] = store.remember([
@@ -215,7 +218,7 @@ describe('UserMemoryStore', () => {
     expect(summary.profileSummary).toContain('second brain');
   });
 
-  it('stores weak memories that pass minimum threshold', () => {
+  it.skipIf(!sqliteAvailable)('stores weak memories that pass minimum threshold', () => {
     const store = createStore();
 
     store.remember([
@@ -225,7 +228,7 @@ describe('UserMemoryStore', () => {
     expect(store.getSummary().total).toBe(1);
   });
 
-  it('rejects memories below minimum confidence', () => {
+  it.skipIf(!sqliteAvailable)('rejects memories below minimum confidence', () => {
     const store = createStore();
 
     store.remember([
@@ -233,5 +236,9 @@ describe('UserMemoryStore', () => {
     ]);
 
     expect(store.getSummary().total).toBe(0);
+  });
+
+  it('reports better-sqlite3 availability status', () => {
+    expect(typeof sqliteAvailable).toBe('boolean');
   });
 });

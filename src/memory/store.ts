@@ -143,7 +143,7 @@ export class LongTermMemory {
   private load(): void {
     if (!existsSync(this.filepath)) return;
     const lines = readFileSync(this.filepath, 'utf-8')
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
     this.facts = lines
       .map(line => {
@@ -191,7 +191,7 @@ export class EpisodicMemory {
   private load(): void {
     if (!existsSync(this.filepath)) return;
     const lines = readFileSync(this.filepath, 'utf-8')
-      .split('\n')
+      .split(/\r?\n/)
       .filter(Boolean);
     this.events = lines
       .map(line => {

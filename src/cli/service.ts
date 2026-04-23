@@ -33,7 +33,10 @@ function getNodeBinPath(): string {
 }
 
 function getDistPath(): string {
-  return join(process.argv[1] || '/usr/local/bin/mercury', '..', '..', 'lib', 'node_modules', '@cosmicstack', 'mercury-agent', 'dist', 'index.js');
+  if (!process.argv[1]) {
+    return join(homedir(), '.nvm', 'versions', 'node', `v${process.version.slice(1)}`, 'lib', 'node_modules', '@cosmicstack', 'mercury-agent', 'dist', 'index.js');
+  }
+  return join(process.argv[1], '..', '..', 'lib', 'node_modules', '@cosmicstack', 'mercury-agent', 'dist', 'index.js');
 }
 
 export function installService(): void {

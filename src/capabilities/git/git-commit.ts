@@ -1,6 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { execSync } from 'node:child_process';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 
 const CO_AUTHOR = 'Mercury <mercury@cosmicstack.org>';
 
@@ -13,13 +15,21 @@ export function createGitCommitTool(getCwd: () => string) {
     execute: async ({ message }) => {
       try {
         const fullMessage = `${message}\n\nCo-authored-by: ${CO_AUTHOR}`;
-        const escapedMsg = fullMessage.replace(/"/g, '\\"');
-        const result = execSync(`git commit -m "${escapedMsg}"`, { encoding: 'utf-8', timeout: 10000, cwd: getCwd() });
+        const cwd = getCwd();
+        const msgFilePath = join(cwd, '.git', 'MERCU_MSG');
+        writeFileSync(msgFilePath, fullMessage, 'utf-8');
+        const result = execSync(`git commit -F "${msgFilePath}"`, {
+          encoding: 'utf-8',
+          timeout: 10000,
+          cwd,
+        });
+        try { unlinkSync(msgFilePath); } catch {}
         return result.trim() || 'Committed successfully.';
       } catch (err: any) {
+        try { unlinkSync(join(getCwd(), '.git', 'MERCU_MSG')); } catch {}
         const stderr = err.stderr?.trim() || '';
         if (stderr.includes('nothing to commit')) {
-          return 'Nothing to commit — no staged changes.';
+          return 'Nothing to commit \u2014 no staged changes.';
         }
         return `Error: ${stderr || err.message}`;
       }

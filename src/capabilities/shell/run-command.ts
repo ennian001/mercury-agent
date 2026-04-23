@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { execSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import type { PermissionManager } from '../permissions.js';
 import { logger } from '../../utils/logger.js';
 
@@ -65,7 +66,7 @@ function detectCd(command: string, currentCwd: string, setCwd: (dir: string) => 
 
   const cdOnly = trimmed.match(/^cd\s+(.+)$/);
   if (cdOnly) {
-    const target = cdOnly[1].replace(/^["']|["']$/g, '').replace(/~/, process.env.HOME || '');
+    const target = cdOnly[1].replace(/^["']|["']$/g, '').replace(/^~/, homedir());
     const resolved = isAbsolute(target) ? target : resolve(currentCwd, target);
     if (existsSync(resolved)) {
       setCwd(resolved);
@@ -75,7 +76,7 @@ function detectCd(command: string, currentCwd: string, setCwd: (dir: string) => 
 
   const cdChain = trimmed.match(/cd\s+(.+?)\s*&&/);
   if (cdChain) {
-    const target = cdChain[1].replace(/^["']|["']$/g, '').replace(/~/, process.env.HOME || '');
+    const target = cdChain[1].replace(/^["']|["']$/g, '').replace(/^~/, homedir());
     const resolved = isAbsolute(target) ? target : resolve(currentCwd, target);
     if (existsSync(resolved)) {
       setCwd(resolved);

@@ -30,6 +30,7 @@ import { logger } from './utils/logger.js';
 import { Identity } from './soul/identity.js';
 import { ShortTermMemory, LongTermMemory, EpisodicMemory, migrateLegacyMemory } from './memory/store.js';
 import { UserMemoryStore } from './memory/user-memory.js';
+import { isBetterSqlite3Available } from './memory/second-brain-db.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { Agent } from './core/agent.js';
 import { Scheduler } from './core/scheduler.js';
@@ -873,7 +874,7 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
   const episodic = new EpisodicMemory(config);
 
   let userMemory: UserMemoryStore | null = null;
-  if (config.memory.secondBrain?.enabled !== false) {
+  if (config.memory.secondBrain?.enabled !== false && isBetterSqlite3Available()) {
     try {
       userMemory = new UserMemoryStore(config);
       if (!isDaemon) {
@@ -885,6 +886,11 @@ async function runAgent(isDaemon: boolean = false): Promise<void> {
       logger.warn({ err }, 'Second brain initialization failed, continuing without it');
       userMemory = null;
     }
+  } else if (config.memory.secondBrain?.enabled !== false && !isBetterSqlite3Available()) {
+    logger.warn(
+      'better-sqlite3 is not available — second brain memory is disabled. ' +
+      'To enable it, install build tools (make, gcc/g++, python3) and ensure Node >= 20, then reinstall.'
+    );
   }
 
   const channels = new ChannelRegistry(config);

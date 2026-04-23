@@ -1,7 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { resolve, isAbsolute } from 'node:path';
+import { resolve, isAbsolute, join } from 'node:path';
 import type { PermissionManager } from '../permissions.js';
 
 export function createListDirTool(permissions: PermissionManager, getCwd: () => string) {
@@ -50,10 +50,6 @@ export function createListDirTool(permissions: PermissionManager, getCwd: () => 
       }
     },
   });
-}
-
-function join(base: string, name: string): string {
-  return base.endsWith('/') ? base + name : base + '/' + name;
 }
 
 function formatSize(bytes: number): string {

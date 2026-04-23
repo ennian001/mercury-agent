@@ -31,11 +31,13 @@ import {
 } from '../utils/config.js';
 
 class ToolCallLoopDetector {
-  private recentCalls: Array<{ tool: string; params: string }> = [];
+  private recentCalls: Array<{ tool: string; params: string; failed: boolean }> = [];
   private totalCalls = 0;
   private hardAborted = false;
+  private recentStepTexts: Array<string> = [];
 
   private static readonly ABSOLUTE_MAX = 25;
+  private static readonly FAILED_ABSOLUTE_MAX = 12;
 
   private static readonly HIGH_TOLERANCE_TOOLS = new Set([
     'fetch_url',
@@ -43,28 +45,48 @@ class ToolCallLoopDetector {
     'list_dir',
     'web_search',
     'github_api',
-    'run_command',
   ]);
 
-  private static getIdenticalThreshold(): number {
-    return 3;
+  private static readonly IDENTICAL_THRESHOLD = 3;
+  private static readonly SIMILAR_THRESHOLD = 4;
+  private static readonly TEXT_REPEAT_THRESHOLD = 3;
+  private static readonly MAX_STEP_TEXTS = 12;
+
+  private static getSameToolThreshold(toolName: string, failingCount: number): number {
+    const baseHigh = 5;
+    const baseNormal = 3;
+    const isHigh = ToolCallLoopDetector.HIGH_TOLERANCE_TOOLS.has(toolName);
+    let threshold = isHigh ? baseHigh : baseNormal;
+    if (failingCount >= 3) {
+      threshold = Math.min(threshold, isHigh ? 3 : 2);
+    }
+    return threshold;
   }
 
-  private static getSameToolThreshold(toolName: string): number {
-    return ToolCallLoopDetector.HIGH_TOLERANCE_TOOLS.has(toolName) ? 8 : 4;
-  }
-
-  record(toolName: string, params: Record<string, any>): void {
+  record(toolName: string, params: Record<string, any>, failed: boolean = false): void {
     const paramsKey = JSON.stringify(params).slice(0, 200);
-    this.recentCalls.push({ tool: toolName, params: paramsKey });
+    this.recentCalls.push({ tool: toolName, params: paramsKey, failed });
     this.totalCalls++;
     if (this.recentCalls.length > 30) {
       this.recentCalls.shift();
     }
   }
 
+  recordStepText(text: string): void {
+    if (!text || text.length < 10) return;
+    const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (!normalized) return;
+    this.recentStepTexts.push(normalized);
+    if (this.recentStepTexts.length > ToolCallLoopDetector.MAX_STEP_TEXTS) {
+      this.recentStepTexts.shift();
+    }
+  }
+
   detectAbsoluteLimit(): boolean {
-    return this.totalCalls >= ToolCallLoopDetector.ABSOLUTE_MAX;
+    if (this.totalCalls >= ToolCallLoopDetector.ABSOLUTE_MAX) return true;
+    const failCount = this.recentCalls.filter(c => c.failed).length;
+    if (failCount >= ToolCallLoopDetector.FAILED_ABSOLUTE_MAX) return true;
+    return false;
   }
 
   detectIdentical(): { tool: string; count: number; message: string } | null {
@@ -81,7 +103,7 @@ class ToolCallLoopDetector {
       }
     }
 
-    if (identicalCount >= ToolCallLoopDetector.getIdenticalThreshold()) {
+    if (identicalCount >= ToolCallLoopDetector.IDENTICAL_THRESHOLD) {
       this.hardAborted = true;
       return {
         tool: last.tool,
@@ -93,21 +115,88 @@ class ToolCallLoopDetector {
     return null;
   }
 
+  detectSimilarLoop(): { tool: string; count: number; message: string } | null {
+    if (this.recentCalls.length < 4) return null;
+
+    const last = this.recentCalls[this.recentCalls.length - 1];
+    let similarCount = 0;
+
+    for (let i = this.recentCalls.length - 1; i >= 0; i--) {
+      const call = this.recentCalls[i];
+      if (call.tool !== last.tool) break;
+      if (call.failed || last.failed) {
+        similarCount++;
+      } else {
+        break;
+      }
+    }
+
+    if (similarCount >= ToolCallLoopDetector.SIMILAR_THRESHOLD) {
+      this.hardAborted = true;
+      return {
+        tool: last.tool,
+        count: similarCount,
+        message: `[SYSTEM] You called "${last.tool}" ${similarCount} times with different params but all are failing. This is a failing loop — stop immediately. Tell the user you cannot complete this task.`,
+      };
+    }
+
+    return null;
+  }
+
+  detectTextRepetition(): { pattern: string; count: number } | null {
+    if (this.recentStepTexts.length < ToolCallLoopDetector.TEXT_REPEAT_THRESHOLD) return null;
+
+    const texts = this.recentStepTexts;
+    const last = texts[texts.length - 1];
+
+    let repeatCount = 0;
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const similarity = this.textSimilarity(last, texts[i]);
+      if (similarity >= 0.7) {
+        repeatCount++;
+      } else {
+        break;
+      }
+    }
+
+    if (repeatCount >= ToolCallLoopDetector.TEXT_REPEAT_THRESHOLD) {
+      return {
+        pattern: last.slice(0, 60),
+        count: repeatCount,
+      };
+    }
+
+    return null;
+  }
+
+  private textSimilarity(a: string, b: string): number {
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+
+    const setA = new Set(a.split(' '));
+    const setB = new Set(b.split(' '));
+    const intersection = [...setA].filter(w => setB.has(w)).length;
+    const union = new Set([...setA, ...setB]).size;
+    return union === 0 ? 0 : intersection / union;
+  }
+
   detectSameTool(): { tool: string; count: number } | null {
     if (this.recentCalls.length < 3) return null;
 
     const last = this.recentCalls[this.recentCalls.length - 1];
 
     let consecutiveCount = 0;
+    let failingConsecutive = 0;
     for (let i = this.recentCalls.length - 1; i >= 0; i--) {
       if (this.recentCalls[i].tool === last.tool) {
         consecutiveCount++;
+        if (this.recentCalls[i].failed) failingConsecutive++;
       } else {
         break;
       }
     }
 
-    const threshold = ToolCallLoopDetector.getSameToolThreshold(last.tool);
+    const threshold = ToolCallLoopDetector.getSameToolThreshold(last.tool, failingConsecutive);
     if (consecutiveCount >= threshold) {
       return { tool: last.tool, count: consecutiveCount };
     }
@@ -136,6 +225,7 @@ class ToolCallLoopDetector {
     this.recentCalls = [];
     this.totalCalls = 0;
     this.hardAborted = false;
+    this.recentStepTexts = [];
   }
 }
 
@@ -316,7 +406,7 @@ export class Agent {
 
       const messages: any[] = [];
 
-      const recentSteps = this.shortTerm.getRecent(msg.channelId, 4);
+      const recentSteps = this.shortTerm.getRecent(msg.channelId, 6);
       let loopWarning: string | null = null;
       if (recentSteps.length >= 3) {
         const toolCallPattern = /\[Using: (.+?)\]/g;
@@ -335,11 +425,26 @@ export class Agent {
             loopWarning = `[SYSTEM WARNING] You have called ${last3[0]} 3+ times in a row with the same result. Stop repeating this call. Try a different approach — if you're failing on permissions, try a different path. If you're failing on git push auth, use github_api with PUT /repos/{owner}/{repo}/contents/{path} to push files directly through the API.`;
           }
         }
+
+        if (!loopWarning) {
+          const assistantMessages = recentSteps.filter(m => m.role === 'assistant' && m.content.length > 20);
+          if (assistantMessages.length >= 3) {
+            const last3 = assistantMessages.slice(-3);
+            const normalizeText = (t: string) => t.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim().slice(0, 150);
+            const normalized = last3.map(m => normalizeText(m.content));
+            const words0 = new Set(normalized[0].split(' '));
+            const overlap01 = normalized[0] && normalized[1] ? [...words0].filter(w => new Set(normalized[1].split(' ')).has(w)).length / Math.max(words0.size, 1) : 0;
+            const overlap12 = normalized[1] && normalized[2] ? [...new Set(normalized[1].split(' '))].filter(w => new Set(normalized[2].split(' ')).has(w)).length / Math.max(new Set(normalized[1].split(' ')).size, 1) : 0;
+            if (overlap01 > 0.75 && overlap12 > 0.75) {
+              loopWarning = `[SYSTEM WARNING] Your last 3 responses are nearly identical. You are stuck in a text repetition loop. Stop immediately and give a completely different response. If you cannot complete the task, tell the user clearly why.`;
+            }
+          }
+        }
       }
 
       if (loopWarning) {
         messages.push({ role: 'user', content: loopWarning });
-        messages.push({ role: 'assistant', content: 'Understood. I will try a different approach.' });
+        messages.push({ role: 'assistant', content: 'Acknowledged. I will stop repeating and respond differently, or clearly state if the task cannot be completed.' });
       }
 
       if (this.userMemory) {
@@ -412,11 +517,21 @@ export class Agent {
               maxSteps: MAX_STEPS,
               abortSignal: loopAbortController.signal,
               onStepFinish: async ({ toolCalls, toolResults }) => {
-                if (toolCalls && toolCalls.length > 0) {
+                if (toolCalls && toolResults && toolCalls.length > 0) {
                   const names = toolCalls.map((tc: any) => tc.toolName).join(', ');
                   logger.info({ tools: names }, 'Tool call step');
-                  for (const tc of toolCalls) {
-                    loopDetector.record(tc.toolName, tc.args as Record<string, any>);
+                  for (let i = 0; i < toolCalls.length; i++) {
+                    const tc = toolCalls[i];
+                    const tr = toolResults[i] as any;
+                    const resultStr = typeof tr?.result === 'string' ? tr.result : JSON.stringify(tr?.result ?? '');
+                    const failed = resultStr.length < 5000 && (
+                      resultStr.startsWith('Error:') ||
+                      resultStr.startsWith('⚠') ||
+                      resultStr.includes('exited with code') ||
+                      resultStr.includes('Command failed') ||
+                      resultStr.startsWith('Command exited with code')
+                    );
+                    loopDetector.record(tc.toolName, tc.args as Record<string, any>, failed);
                   }
                   if (loopDetector.detectAbsoluteLimit()) {
                     logger.warn('Absolute tool call limit reached — aborting');
@@ -435,6 +550,16 @@ export class Agent {
                     if (!loopWarningSent && channel && msg.channelType !== 'internal') {
                       loopWarningSent = true;
                       await channel.send(`⚠ Repeated call detected — ${hardLoop.tool} called ${hardLoop.count}x with same params. Stopping.`, msg.channelId).catch(() => {});
+                    }
+                    loopAbortController.abort();
+                    return;
+                  }
+                  const similarLoop = loopDetector.detectSimilarLoop();
+                  if (similarLoop) {
+                    logger.warn({ tool: similarLoop.tool, count: similarLoop.count }, 'Failing loop detected — aborting');
+                    if (!loopWarningSent && channel && msg.channelType !== 'internal') {
+                      loopWarningSent = true;
+                      await channel.send(`⚠ Failing loop detected — ${similarLoop.tool} called ${similarLoop.count}x, all failing. Stopping.`, msg.channelId).catch(() => {});
                     }
                     loopAbortController.abort();
                     return;
@@ -489,6 +614,20 @@ export class Agent {
                     } else {
                       await channel.send(`  [Using: ${names}]`, msg.channelId).catch(() => {});
                     }
+                  }
+                } else if (toolResults === undefined || (toolCalls === undefined)) {
+                  const stepText = (toolResults as any)?.text ?? '';
+                  if (stepText) {
+                    loopDetector.recordStepText(String(stepText));
+                  }
+                  const textRepeat = loopDetector.detectTextRepetition();
+                  if (textRepeat) {
+                    logger.warn({ pattern: textRepeat.pattern, count: textRepeat.count }, 'Text repetition loop detected — aborting');
+                    if (!loopWarningSent && channel && msg.channelType !== 'internal') {
+                      loopWarningSent = true;
+                      await channel.send('⚠ I keep generating the same response. Stopping to prevent repetition.', msg.channelId).catch(() => {});
+                    }
+                    loopAbortController.abort();
                   }
                 }
               },
@@ -520,6 +659,7 @@ export class Agent {
 
             result = { text: fullText, usage };
             streamedText = fullText;
+            loopDetector.recordStepText(fullText);
           } else {
             result = await generateText({
               model: provider.getModelInstance(),
@@ -529,11 +669,21 @@ export class Agent {
               maxSteps: MAX_STEPS,
               abortSignal: loopAbortController.signal,
               onStepFinish: async ({ toolCalls, toolResults }) => {
-                if (toolCalls && toolCalls.length > 0) {
+                if (toolCalls && toolResults && toolCalls.length > 0) {
                   const names = toolCalls.map((tc: any) => tc.toolName).join(', ');
                   logger.info({ tools: names }, 'Tool call step');
-                  for (const tc of toolCalls) {
-                    loopDetector.record(tc.toolName, tc.args as Record<string, any>);
+                  for (let i = 0; i < toolCalls.length; i++) {
+                    const tc = toolCalls[i];
+                    const tr = toolResults[i] as any;
+                    const resultStr = typeof tr?.result === 'string' ? tr.result : JSON.stringify(tr?.result ?? '');
+                    const failed = resultStr.length < 5000 && (
+                      resultStr.startsWith('Error:') ||
+                      resultStr.startsWith('⚠') ||
+                      resultStr.includes('exited with code') ||
+                      resultStr.includes('Command failed') ||
+                      resultStr.startsWith('Command exited with code')
+                    );
+                    loopDetector.record(tc.toolName, tc.args as Record<string, any>, failed);
                   }
                   if (loopDetector.detectAbsoluteLimit()) {
                     logger.warn('Absolute tool call limit reached — aborting');
@@ -552,6 +702,16 @@ export class Agent {
                     if (!loopWarningSent && channel && msg.channelType !== 'internal') {
                       loopWarningSent = true;
                       await channel.send(`⚠ Repeated call detected — ${hardLoop.tool} called ${hardLoop.count}x with same params. Stopping.`, msg.channelId).catch(() => {});
+                    }
+                    loopAbortController.abort();
+                    return;
+                  }
+                  const similarLoop = loopDetector.detectSimilarLoop();
+                  if (similarLoop) {
+                    logger.warn({ tool: similarLoop.tool, count: similarLoop.count }, 'Failing loop detected — aborting');
+                    if (!loopWarningSent && channel && msg.channelType !== 'internal') {
+                      loopWarningSent = true;
+                      await channel.send(`⚠ Failing loop detected — ${similarLoop.tool} called ${similarLoop.count}x, all failing. Stopping.`, msg.channelId).catch(() => {});
                     }
                     loopAbortController.abort();
                     return;
@@ -607,6 +767,20 @@ export class Agent {
                       await channel.send(`  [Using: ${names}]`, msg.channelId).catch(() => {});
                     }
                   }
+                } else if (toolResults === undefined || (toolCalls === undefined)) {
+                  const stepText = (toolResults as any)?.text ?? '';
+                  if (stepText) {
+                    loopDetector.recordStepText(String(stepText));
+                  }
+                  const textRepeat = loopDetector.detectTextRepetition();
+                  if (textRepeat) {
+                    logger.warn({ pattern: textRepeat.pattern, count: textRepeat.count }, 'Text repetition loop detected — aborting');
+                    if (!loopWarningSent && channel && msg.channelType !== 'internal') {
+                      loopWarningSent = true;
+                      await channel.send('⚠ I keep generating the same response. Stopping to prevent repetition.', msg.channelId).catch(() => {});
+                    }
+                    loopAbortController.abort();
+                  }
                 }
               },
             });
@@ -622,7 +796,7 @@ export class Agent {
               result = { text: streamedText, usage: undefined };
             }
             if (!result) {
-              result = { text: 'I stopped because I was repeating the same tool calls. What would you like me to do differently?', usage: undefined };
+              result = { text: 'I stopped because I detected I was stuck in a loop (repeating the same action without progress). I cannot complete this task as requested. Please let me know if you\'d like me to try a completely different approach, or if there\'s something else I can help with.', usage: undefined };
             }
             if (usedProvider) {
               this.providers.markSuccess(usedProvider.name);
