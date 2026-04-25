@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/card.png" alt="Mercury — Soul-Driven AI Agent" width="600">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/card-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/card-light.png">
+    <img alt="Mercury — Soul-Driven AI Agent" src="docs/card-light.png" width="600">
+  </picture>
 </p>
 
 <p align="center">
