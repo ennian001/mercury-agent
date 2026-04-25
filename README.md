@@ -258,6 +258,67 @@ MIT © [Cosmic Stack](https://github.com/cosmicstack-labs)
 
 ---
 
-## Suggestions and Contributions
+## Contributing
 
-For suggestions, contributions, or any inquiries, please reach out to us at [mercury@cosmicstack.org](mailto:mercury@cosmicstack.org).
+We're open to contributions! Mercury is built to evolve, and we welcome help from the community. Whether it's fixing a bug, adding a tool, improving memory, or refining the soul — all quality contributions are appreciated.
+
+### 🎯 Agentic Expertise — Must-Have for Contributors
+
+Mercury isn't just another open-source project — it's a **soul-driven agent** that runs 24/7, manages permissions, remembers context, and interacts across channels. If you're contributing, you must think like an agent builder, not just a library contributor. These are non-negotiable principles every contributor should internalize:
+
+| Principle | What It Means |
+|-----------|---------------|
+| 🧠 **Think in loops** | Mercury operates in a 10-step agentic loop. Your tool or feature will be called multiple times per conversation. Make it idempotent where possible. |
+| 🔐 **Permission-first** | Every action that touches the outside world (files, shell, network, git) must go through the permission system. Never assume approval. |
+| 💾 **Memory-aware** | If your feature generates facts about the user, consider hooking into the Second Brain. If it reads user data, check memory first. |
+| 📏 **Token-conscious** | Mercury has a daily token budget. Logging, verbose outputs, and large context dumps burn tokens fast. Keep it lean. |
+| 🔌 **Channel-agnostic** | Tools should work identically on CLI and Telegram. Don't assume a terminal, a keyboard, or even a human on the other end. |
+| 🔁 **Graceful degradation** | If a provider fails, a tool errors, or a file doesn't exist — Mercury should recover, not crash. Always handle edge cases. |
+| 📋 **Self-documenting** | Your tool's name and description are what Mercury reads to decide when to use it. Make them clear, specific, and action-oriented. |
+| 🧪 **Test the loop, not just the function** | A tool that works in isolation may fail in the agentic loop (e.g., returns too much data, blocks the next step). Test end-to-end. |
+
+### Code Quality — Dos
+
+| Do | Why |
+|----|-----|
+| ✅ Write clean, readable TypeScript with explicit types | Mercury's codebase is type-safe — keep it that way |
+| ✅ Add JSDoc comments on public functions and tools | Helps other contributors and the agent understand intent |
+| ✅ Keep functions small and single-purpose | Easier to test, review, and reason about |
+| ✅ Use async/await over raw promises | Consistent error handling and readability |
+| ✅ Write tests for new tools and memory features | Reliability matters for a 24/7 agent |
+| ✅ Follow the existing project structure (`src/tools/`, `src/memory/`, `src/channels/`) | Keeps the codebase navigable |
+| ✅ Use the Agent Skills spec for new skill-based features | Ensures compatibility with the skills ecosystem |
+| ✅ Document breaking changes in PR descriptions | Helps maintainers version properly |
+
+### Code Quality — Don'ts
+
+| Don't | Why |
+|-------|-----|
+| ❌ Don't add dependencies without discussion | Mercury is lean — every dep adds surface area |
+| ❌ Don't hardcode API keys, tokens, or paths | Use config/env vars like the rest of the codebase |
+| ❌ Don't bypass the permission system | Tools must ask before acting — that's Mercury's core promise |
+| ❌ Don't introduce sync/blocking I/O in hot paths | Mercury is async-first for a reason |
+| ❌ Don't commit large binary files or secrets | Use `.gitignore` and env files |
+| ❌ Don't change the soul/persona system without discussion | It's the heart of Mercury — changes need care |
+| ❌ Don't submit untested Telegram or daemon changes | These are hard to debug post-merge |
+| ❌ Don't ignore the token budget system | Every tool should be mindful of token consumption |
+
+### Getting Started
+
+1. Fork the repo
+2. Run `npm install`
+3. Make your changes
+4. Run `npm run build` to verify it compiles
+5. Test with `mercury` locally
+6. Open a PR with a clear description of what you changed and why
+
+### PR Guidelines
+
+- Keep PRs focused — one feature/fix per PR
+- Include before/after behavior in the description
+- Tag related issues if applicable
+- Be responsive to review feedback
+
+### Need Help?
+
+Open an issue or reach out at [mercury@cosmicstack.org](mailto:mercury@cosmicstack.org). We're friendly.
